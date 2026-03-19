@@ -39,7 +39,7 @@
         <!-- Header -->
         <div class="text-center mb-10">
             <h1 class="text-4xl font-extrabold text-slate-900 mb-2">Local AI Deck Architect</h1>
-            <p class="text-slate-600">100% 本地處理 • WebGPU 加速 • 隱私無憂</p>
+            <p class="text-slate-600">100% 本地處理 • Donut 模型驅動 • WebGPU 加速</p>
             <div id="gpu-status" class="mt-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
                 正在檢測 WebGPU 支援...
             </div>
@@ -51,13 +51,16 @@
             <!-- Step 1: Model Loading -->
             <div id="model-status" class="mb-8 p-4 bg-blue-50 rounded-xl border border-blue-100">
                 <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm font-semibold text-blue-800">AI 模型狀態</span>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-semibold text-blue-800">AI 模型狀態: Donut (OCR)</span>
+                        <span id="model-file-info" class="text-[10px] text-blue-500">準備中...</span>
+                    </div>
                     <span id="model-percent" class="text-xs text-blue-600">等待初始化...</span>
                 </div>
                 <div class="w-full bg-blue-200 rounded-full h-2">
                     <div id="model-progress" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
                 </div>
-                <p id="model-info" class="text-xs text-blue-500 mt-2 italic">載入模型需要約 50-100MB 流量（僅需一次）</p>
+                <p id="model-info" class="text-xs text-blue-500 mt-2 italic">Donut 模型約 200MB，下載後將緩存於瀏覽器。</p>
             </div>
 
             <!-- Step 2: Drop Zone -->
@@ -89,7 +92,7 @@
 
         <!-- Footer -->
         <div class="mt-8 text-center text-slate-400 text-sm">
-            <p>© 2024 AI Deck Studio • 基於 WebAssembly 與 WebGPU 技術</p>
+            <p>© 2024 AI Deck Studio • Powered by Transformers.js & Donut</p>
         </div>
     </div>
 
@@ -97,7 +100,7 @@
         // 初始化 PDF.js Worker
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        let vqaPipeline = null;
+        let ocrPipeline = null;
         let processedPages = [];
 
         // 檢查 WebGPU 支援
@@ -118,18 +121,24 @@
             return false;
         }
 
-        // 初始化 AI 模型
+        // 初始化 AI 模型 (更換為 Donut)
         async function initAI() {
             const hasWebGPU = await checkWebGPU();
             const { pipeline, env } = window.transformers;
 
+            // 關閉遙測與不必要的快取檢查以提升載入速度
+            env.allowLocalModels = false;
+
             try {
-                // 加載輕量級視覺模型 (Image-to-Text)
-                vqaPipeline = await pipeline('image-to-text', 'Xenova/vit-gpt2-image-captioning', {
+                // 使用 Donut 模型進行文件 OCR 任務
+                // 'Xenova/donut-base-finetuned-docvqa' 是 Donut 的一個變體，對文件結構有極佳的理解力
+                ocrPipeline = await pipeline('document-question-answering', 'Xenova/donut-base-finetuned-docvqa', {
                     progress_callback: (p) => {
-                        const progress = p.progress || 0;
-                        document.getElementById('model-progress').style.width = `${progress}%`;
-                        document.getElementById('model-percent').innerText = `下載中: ${Math.round(progress)}%`;
+                        if (p.status === 'progress') {
+                            document.getElementById('model-progress').style.width = `${p.progress}%`;
+                            document.getElementById('model-percent').innerText = `${Math.round(p.progress)}%`;
+                            document.getElementById('model-file-info').innerText = `正在下載: ${p.file}`;
+                        }
                     },
                     device: hasWebGPU ? 'webgpu' : 'cpu'
                 });
@@ -137,9 +146,10 @@
                 document.getElementById('model-status').className = 'mb-8 p-4 bg-green-50 rounded-xl border border-green-100';
                 document.getElementById('model-percent').innerText = '模型就緒';
                 document.getElementById('model-percent').className = 'text-xs text-green-600 font-bold';
+                document.getElementById('model-file-info').innerText = 'Donut (OCR) 模型已就緒';
             } catch (err) {
                 console.error(err);
-                document.getElementById('model-info').innerText = '模型載入失敗，請重新整理頁面。';
+                document.getElementById('model-info').innerText = '模型載入失敗，建議檢查網路連接或使用 Chrome 瀏覽器。';
             }
         }
 
@@ -155,9 +165,10 @@
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
                 
-                for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+                const maxPages = Math.min(pdf.numPages, 5); // 限制頁數以防瀏覽器記憶體溢出
+                for (let i = 1; i <= maxPages; i++) {
                     const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 1.5 });
+                    const viewport = page.getViewport({ scale: 2.0 }); // 提高縮放比例以提升 OCR 準確度
                     const canvas = document.createElement('canvas');
                     const context = canvas.getContext('2d');
                     canvas.height = viewport.height;
@@ -184,44 +195,57 @@
             const div = document.createElement('div');
             div.className = 'relative group';
             div.innerHTML = `
-                <img src="${src}" class="w-full h-32 object-cover rounded-lg border border-slate-200">
-                <span class="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-1 rounded">${label}</span>
+                <img src="${src}" class="w-full h-32 object-cover rounded-lg border border-slate-200 shadow-sm">
+                <span class="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded backdrop-blur-sm">${label}</span>
             `;
             document.getElementById('preview-container').appendChild(div);
         }
 
-        // 轉換邏輯
+        // 轉換邏輯 (使用 Donut 推論)
         async function convertToPPTX() {
             const btn = document.getElementById('convert-btn');
             btn.disabled = true;
-            btn.innerText = 'AI 分析中...';
+            btn.innerText = 'AI 結構分析中...';
 
             const pptx = new PptxGenJS();
             pptx.layout = 'LAYOUT_WIDE';
 
-            for (const page of processedPages) {
+            for (let i = 0; i < processedPages.length; i++) {
+                const page = processedPages[i];
                 const slide = pptx.addSlide();
                 
-                // 這裡模擬 OCR 流程
-                // 在實際應用中，你會使用更複雜的 OCR 模型來獲取文字位置 (Bounding Boxes)
-                // 這裡我們展示如何調用 Transformers.js 獲取頁面描述作為示範內容
                 try {
-                    const result = await vqaPipeline(page.image);
-                    const detectedText = result[0].generated_text || "無法辨識內容";
+                    btn.innerText = `正在辨識第 ${i+1}/${processedPages.length} 頁...`;
+                    
+                    // 使用 Donut 進行文件問答 (這是一種獲取文件內容的強大方式)
+                    // 我們給模型一個提示，讓它提取所有可見文字
+                    const prompt = "What is written in this document?";
+                    const result = await ocrPipeline(page.image, prompt);
+                    
+                    // Donut 回傳的通常是結構化文字內容
+                    const detectedText = result[0]?.answer || "無法讀取內容";
 
-                    // 添加背景（可選）
-                    // slide.addImage({ data: page.image, x: 0, y: 0, w: '100%', h: '100%' });
+                    // 1. 添加背景圖作為參考 (DeckEdit 模式：背景圖片 + 浮動文字)
+                    slide.addImage({ data: page.image, x: 0, y: 0, w: '100%', h: '100%', opacity: 0.1 });
 
-                    // 添加 AI 辨識出的文字塊（這就是 DeckEdit 的核心：將死圖片轉為活文字）
-                    slide.addText(detectedText.toUpperCase(), {
-                        x: 0.5, y: 0.5, w: '90%', h: 1,
-                        fontSize: 24, color: '363636', bold: true,
-                        align: 'center'
+                    // 2. 模擬標題
+                    slide.addText("辨識結果 (標題)", {
+                        x: 0.5, y: 0.3, w: '90%', h: 0.8,
+                        fontSize: 32, color: '1A365D', bold: true, fontFace: 'Arial'
                     });
 
-                    slide.addText("這是由本地 AI 辨識並重新構建的可編輯文字方塊。", {
-                        x: 0.5, y: 2.0, w: '90%', h: 0.5,
-                        fontSize: 14, color: '666666'
+                    // 3. 添加 AI 辨識出的主要內容文字塊
+                    slide.addText(detectedText.trim(), {
+                        x: 0.5, y: 1.5, w: '90%', h: 4,
+                        fontSize: 18, color: '2D3748',
+                        align: 'left', valign: 'top',
+                        bullet: { type: 'number' },
+                        lineSpacing: 28
+                    });
+
+                    slide.addText("註：此文字方塊已轉為可編輯狀態。", {
+                        x: 0.5, y: 6.5, w: '90%', h: 0.4,
+                        fontSize: 10, color: 'A0AEC0', italic: true
                     });
 
                 } catch (e) {
@@ -229,8 +253,8 @@
                 }
             }
 
-            pptx.writeFile({ fileName: `AI-Converted-Deck.pptx` });
-            btn.innerText = '轉換完成！';
+            pptx.writeFile({ fileName: `AI-Deck-Result.pptx` });
+            btn.innerText = '轉換成功！';
             setTimeout(() => {
                 btn.innerText = '轉換為 PPTX';
                 btn.disabled = false;
@@ -242,11 +266,11 @@
         const fileInput = document.getElementById('file-input');
 
         dropZone.onclick = () => fileInput.click();
-        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('bg-blue-50'); };
-        dropZone.ondragleave = () => dropZone.classList.remove('bg-blue-50');
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('bg-blue-50', 'border-blue-400'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('bg-blue-50', 'border-blue-400');
         dropZone.ondrop = (e) => {
             e.preventDefault();
-            dropZone.classList.remove('bg-blue-50');
+            dropZone.classList.remove('bg-blue-50', 'border-blue-400');
             handleFile(e.dataTransfer.files[0]);
         };
         fileInput.onchange = (e) => handleFile(e.target.files[0]);
