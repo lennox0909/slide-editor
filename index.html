@@ -50,63 +50,74 @@
 
             const handleFile = async (e) => {
                 const file = e.target.files[0];
-                if (!file || file.type !== 'application/pdf') {
-                    alert('請上傳 PDF 檔案');
-                    return;
+                if (!file) return;
+                
+                if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
+                    processFile(file);
+                } else {
+                    alert('請上傳 PDF 檔案或圖片 (PNG/JPG)');
                 }
-                processPdf(file);
             };
 
-            const processPdf = async (file) => {
+            const processFile = async (file) => {
                 try {
                     setStatus('processing');
                     setProgress(5);
-                    addLog('🚀 開始解析 PDF...');
-
-                    const arrayBuffer = await file.arrayBuffer();
-                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                    const totalPages = pdf.numPages;
-                    addLog(`📄 偵測到 ${totalPages} 頁簡報`);
-
                     const processedSlides = [];
 
-                    for (let i = 1; i <= totalPages; i++) {
-                        setProgress(Math.round((i / totalPages) * 100));
-                        addLog(`⚙️ 正在處理第 ${i} 頁...`);
+                    if (file.type === 'application/pdf') {
+                        addLog('🚀 開始解析 PDF...');
+                        const arrayBuffer = await file.arrayBuffer();
+                        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                        const totalPages = pdf.numPages;
+                        addLog(`📄 偵測到 ${totalPages} 頁簡報`);
 
-                        // 1. 渲染 PDF 頁面為 Canvas
-                        const page = await pdf.getPage(i);
-                        const viewport = page.getViewport({ scale: 2.0 });
-                        const canvas = document.createElement('canvas');
-                        const context = canvas.getContext('2d');
-                        canvas.height = viewport.height;
-                        canvas.width = viewport.width;
+                        for (let i = 1; i <= totalPages; i++) {
+                            setProgress(Math.round((i / totalPages) * 100));
+                            addLog(`⚙️ 正在處理第 ${i} 頁...`);
 
-                        await page.render({ canvasContext: context, viewport }).promise;
-                        const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                            const page = await pdf.getPage(i);
+                            const viewport = page.getViewport({ scale: 2.0 });
+                            const canvas = document.createElement('canvas');
+                            const context = canvas.getContext('2d');
+                            canvas.height = viewport.height;
+                            canvas.width = viewport.width;
 
-                        // 2. 呼叫 Tesseract OCR 模型進行視覺辨識
-                        addLog(`   🔍 AI 執行 OCR 偵測中...`);
-                        const { data } = await Tesseract.recognize(imageDataUrl, 'chi_tra+eng', {
-                            logger: m => { if (m.status === 'recognizing text') console.log(m.progress); }
+                            await page.render({ canvasContext: context, viewport }).promise;
+                            const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                            
+                            const elements = await runOCR(imageDataUrl, canvas.width, canvas.height);
+                            processedSlides.push({
+                                backgroundImage: imageDataUrl,
+                                elements: elements,
+                                width: canvas.width,
+                                height: canvas.height
+                            });
+                        }
+                    } else {
+                        // 處理圖片檔案
+                        addLog('🖼️ 開始解析圖片檔案...');
+                        setProgress(30);
+                        const imageDataUrl = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => resolve(e.target.result);
+                            reader.readAsDataURL(file);
                         });
 
-                        // 3. 結構化解析 (取得座標與大小)
-                        const elements = data.blocks.map(block => ({
-                            text: block.text.trim(),
-                            x: (block.bbox.x0 / canvas.width) * 100,
-                            y: (block.bbox.y0 / canvas.height) * 100,
-                            w: ((block.bbox.x1 - block.bbox.x0) / canvas.width) * 100,
-                            h: ((block.bbox.y1 - block.bbox.y0) / canvas.height) * 100,
-                            fontSize: block.paragraphs[0]?.lines[0]?.words[0]?.font_size || 12
-                        })).filter(el => el.text.length > 1);
+                        const img = new Image();
+                        await new Promise((resolve) => {
+                            img.onload = resolve;
+                            img.src = imageDataUrl;
+                        });
 
+                        const elements = await runOCR(imageDataUrl, img.width, img.height);
                         processedSlides.push({
                             backgroundImage: imageDataUrl,
                             elements: elements,
-                            width: canvas.width,
-                            height: canvas.height
+                            width: img.width,
+                            height: img.height
                         });
+                        setProgress(100);
                     }
 
                     setSlidesData(processedSlides);
@@ -119,27 +130,39 @@
                 }
             };
 
+            const runOCR = async (imageDataUrl, width, height) => {
+                addLog(`   🔍 AI 執行 OCR 偵測中...`);
+                const { data } = await Tesseract.recognize(imageDataUrl, 'chi_tra+eng');
+
+                return data.blocks.map(block => ({
+                    text: block.text.trim(),
+                    x: (block.bbox.x0 / width) * 100,
+                    y: (block.bbox.y0 / height) * 100,
+                    w: ((block.bbox.x1 - block.bbox.x0) / width) * 100,
+                    h: ((block.bbox.y1 - block.bbox.y0) / height) * 100,
+                    fontSize: block.paragraphs[0]?.lines[0]?.words[0]?.font_size || 12
+                })).filter(el => el.text.length > 1);
+            };
+
             const exportToPptx = () => {
                 const pptx = new PptxGenJS();
                 pptx.layout = 'LAYOUT_16x9';
 
-                slidesData.forEach((slide, index) => {
+                slidesData.forEach((slide) => {
                     const pptSlide = pptx.addSlide();
                     
-                    // 設置背景圖 (背景分離步驟)
                     pptSlide.addImage({ 
                         data: slide.backgroundImage, 
                         x: 0, y: 0, w: '100%', h: '100%' 
                     });
 
-                    // 填充可編輯文字層
                     slide.elements.forEach(el => {
                         pptSlide.addText(el.text, {
                             x: `${el.x}%`,
                             y: `${el.y}%`,
                             w: `${el.w}%`,
                             h: `${el.h}%`,
-                            fontSize: el.fontSize / 2.5, // 縮放校準
+                            fontSize: el.fontSize / 2.5,
                             color: '333333',
                             valign: 'top'
                         });
@@ -176,18 +199,18 @@
                                     type="file" 
                                     ref={fileInputRef} 
                                     className="hidden" 
-                                    accept="application/pdf"
+                                    accept="application/pdf,image/*"
                                     onChange={handleFile}
                                 />
                                 <div className="bg-blue-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
                                     <Icon name="upload-cloud" className="text-blue-600 w-10 h-10" />
                                 </div>
                                 <h2 className="text-3xl font-bold mb-4">開始轉化簡報</h2>
-                                <p className="text-slate-500 text-lg">拖放或點擊上傳 NotebookLM 生成的 PDF 檔案</p>
+                                <p className="text-slate-500 text-lg">拖放或點擊上傳 PDF 檔案或簡報截圖</p>
                                 <div className="mt-8 flex justify-center space-x-4 text-sm font-medium text-slate-400">
                                     <span className="flex items-center"><Icon name="shield" className="w-4 h-4 mr-1"/> 隱私安全</span>
                                     <span className="flex items-center"><Icon name="cpu" className="w-4 h-4 mr-1"/> 本地辨識</span>
-                                    <span className="flex items-center"><Icon name="zap" className="w-4 h-4 mr-1"/> 即時導出</span>
+                                    <span className="flex items-center"><Icon name="file-type" className="w-4 h-4 mr-1"/> 支援 PDF/圖片</span>
                                 </div>
                             </div>
                         )}
@@ -197,7 +220,7 @@
                             <div className="bg-white rounded-[2rem] p-10 shadow-xl border border-slate-100">
                                 <h3 className="text-2xl font-bold mb-6 flex items-center">
                                     <Icon name="loader" className="w-6 h-6 mr-3 text-blue-600 animate-spin" />
-                                    AI 正在解析您的簡報...
+                                    AI 正在解析您的內容...
                                 </h3>
                                 <div className="w-full bg-slate-100 h-4 rounded-full overflow-hidden mb-6">
                                     <div 
@@ -219,7 +242,7 @@
                                 </div>
                                 <h2 className="text-4xl font-bold mb-4">重構完成！</h2>
                                 <p className="text-slate-500 text-lg mb-10">
-                                    我們已成功將 {slidesData.length} 頁圖片分離出可編輯的文字層。
+                                    我們已成功分離出可編輯的文字層。
                                 </p>
                                 <div className="flex flex-col sm:flex-row justify-center gap-4">
                                     <button 
@@ -250,7 +273,7 @@
                         )}
                     </main>
 
-                    {/* Features Grid (Always visible at bottom when idle) */}
+                    {/* Features Grid */}
                     {status === 'idle' && (
                         <div className="max-w-6xl mx-auto px-6 py-12 grid grid-cols-1 md:grid-cols-3 gap-8 border-t border-slate-200 mt-auto">
                             <div className="flex space-x-4">
@@ -267,8 +290,8 @@
                                     <Icon name="image" className="text-purple-500 w-5 h-5" />
                                 </div>
                                 <div>
-                                    <h4 className="font-bold text-slate-900">背景層自動分離</h4>
-                                    <p className="text-sm text-slate-500">將原始 PDF 頁面設為背景圖，保持視覺一致性。</p>
+                                    <h4 className="font-bold text-slate-900">多格式支援</h4>
+                                    <p className="text-sm text-slate-500">支援 PDF 簡報與單張圖片截圖辨識。</p>
                                 </div>
                             </div>
                             <div className="flex space-x-4">
@@ -277,7 +300,7 @@
                                 </div>
                                 <div>
                                     <h4 className="font-bold text-slate-900">瀏覽器端 Tesseract AI</h4>
-                                    <p className="text-sm text-slate-500">所有辨識過程均在您的電腦執行，絕不上傳資料到雲端。</p>
+                                    <p className="text-sm text-slate-500">辨識過程均在您的電腦執行，絕不上傳個人資料。</p>
                                 </div>
                             </div>
                         </div>
