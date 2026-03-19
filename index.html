@@ -16,11 +16,17 @@
     <style>
         .drop-zone {
             border: 2px dashed #cbd5e1;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
         }
         .drop-zone:hover {
             border-color: #3b82f6;
-            background-color: #f8fafc;
+            background-color: #f0f7ff;
+            transform: translateY(-2px);
+        }
+        .drop-zone:active {
+            transform: translateY(0px);
+            background-color: #e0efff;
         }
         .loading-shimmer {
             background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
@@ -64,13 +70,14 @@
             </div>
 
             <!-- Step 2: Drop Zone -->
-            <div id="drop-zone" class="drop-zone rounded-xl p-12 text-center cursor-pointer mb-6">
+            <div id="drop-zone" class="drop-zone rounded-xl p-12 text-center mb-6" title="點擊或拖放檔案以開始">
+                <!-- 隱藏的檔案輸入框 -->
                 <input type="file" id="file-input" class="hidden" accept="image/*,application/pdf">
-                <div class="flex flex-col items-center">
+                <div class="flex flex-col items-center pointer-events-none">
                     <svg class="w-12 h-12 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                     </svg>
-                    <p class="text-lg font-medium text-slate-700">拖放 PDF 或簡報截圖至此</p>
+                    <p class="text-lg font-medium text-slate-700">點擊此處或拖放 PDF 至此</p>
                     <p class="text-sm text-slate-500 mt-1">支援 PDF, PNG, JPG (最大 20MB)</p>
                 </div>
             </div>
@@ -78,11 +85,23 @@
             <!-- Step 3: Action & Preview -->
             <div id="processing-view" class="hidden">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="font-bold text-slate-800">處理進度</h3>
+                    <h3 class="font-bold text-slate-800">預覽與處理</h3>
                     <button id="convert-btn" disabled class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition disabled:bg-slate-300 disabled:cursor-not-allowed">
                         轉換為 PPTX
                     </button>
                 </div>
+
+                <!-- 轉換進度顯示 -->
+                <div id="conversion-status" class="hidden mb-6 p-4 bg-amber-50 rounded-xl border border-amber-100">
+                    <div class="flex items-center justify-between mb-2">
+                        <span id="conversion-label" class="text-sm font-semibold text-amber-800">準備處理中...</span>
+                        <span id="conversion-percent" class="text-xs text-amber-600 font-bold">0%</span>
+                    </div>
+                    <div class="w-full bg-amber-200 rounded-full h-2">
+                        <div id="conversion-progress" class="bg-amber-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+
                 <div id="preview-container" class="grid grid-cols-2 md:grid-cols-3 gap-4 border-t pt-4">
                     <!-- 預覽縮圖將插入此處 -->
                 </div>
@@ -121,17 +140,13 @@
             return false;
         }
 
-        // 初始化 AI 模型 (更換為 Donut)
+        // 初始化 AI 模型
         async function initAI() {
             const hasWebGPU = await checkWebGPU();
             const { pipeline, env } = window.transformers;
-
-            // 關閉遙測與不必要的快取檢查以提升載入速度
             env.allowLocalModels = false;
 
             try {
-                // 使用 Donut 模型進行文件 OCR 任務
-                // 'Xenova/donut-base-finetuned-docvqa' 是 Donut 的一個變體，對文件結構有極佳的理解力
                 ocrPipeline = await pipeline('document-question-answering', 'Xenova/donut-base-finetuned-docvqa', {
                     progress_callback: (p) => {
                         if (p.status === 'progress') {
@@ -149,7 +164,7 @@
                 document.getElementById('model-file-info').innerText = 'Donut (OCR) 模型已就緒';
             } catch (err) {
                 console.error(err);
-                document.getElementById('model-info').innerText = '模型載入失敗，建議檢查網路連接或使用 Chrome 瀏覽器。';
+                document.getElementById('model-info').innerText = '模型載入失敗，建議檢查網路連接。';
             }
         }
 
@@ -157,6 +172,7 @@
         async function handleFile(file) {
             if (!file) return;
             document.getElementById('processing-view').classList.remove('hidden');
+            document.getElementById('conversion-status').classList.add('hidden');
             const previewContainer = document.getElementById('preview-container');
             previewContainer.innerHTML = '';
             processedPages = [];
@@ -165,10 +181,10 @@
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
                 
-                const maxPages = Math.min(pdf.numPages, 5); // 限制頁數以防瀏覽器記憶體溢出
+                const maxPages = Math.min(pdf.numPages, 10);
                 for (let i = 1; i <= maxPages; i++) {
                     const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 2.0 }); // 提高縮放比例以提升 OCR 準確度
+                    const viewport = page.getViewport({ scale: 2.0 }); 
                     const canvas = document.createElement('canvas');
                     const context = canvas.getContext('2d');
                     canvas.height = viewport.height;
@@ -177,7 +193,7 @@
                     await page.render({ canvasContext: context, viewport: viewport }).promise;
                     const imgData = canvas.toDataURL('image/png');
                     addPreview(imgData, `第 ${i} 頁`);
-                    processedPages.push({ image: imgData, canvas: canvas });
+                    processedPages.push({ image: imgData });
                 }
             } else {
                 const reader = new FileReader();
@@ -201,82 +217,102 @@
             document.getElementById('preview-container').appendChild(div);
         }
 
-        // 轉換邏輯 (使用 Donut 推論)
+        // 轉換邏輯
         async function convertToPPTX() {
             const btn = document.getElementById('convert-btn');
-            btn.disabled = true;
-            btn.innerText = 'AI 結構分析中...';
+            const statusBox = document.getElementById('conversion-status');
+            const progressBar = document.getElementById('conversion-progress');
+            const percentLabel = document.getElementById('conversion-percent');
+            const statusLabel = document.getElementById('conversion-label');
 
+            btn.disabled = true;
+            statusBox.classList.remove('hidden');
+            
             const pptx = new PptxGenJS();
             pptx.layout = 'LAYOUT_WIDE';
 
-            for (let i = 0; i < processedPages.length; i++) {
+            const total = processedPages.length;
+
+            for (let i = 0; i < total; i++) {
                 const page = processedPages[i];
+                const currentProgress = Math.round(((i) / total) * 100);
+                
+                progressBar.style.width = `${currentProgress}%`;
+                percentLabel.innerText = `${currentProgress}%`;
+                statusLabel.innerText = `正在處理第 ${i+1} 頁...`;
+                btn.innerText = `處理中 (${i+1}/${total})`;
+                
                 const slide = pptx.addSlide();
                 
                 try {
-                    btn.innerText = `正在辨識第 ${i+1}/${processedPages.length} 頁...`;
-                    
-                    // 使用 Donut 進行文件問答 (這是一種獲取文件內容的強大方式)
-                    // 我們給模型一個提示，讓它提取所有可見文字
                     const prompt = "What is written in this document?";
                     const result = await ocrPipeline(page.image, prompt);
-                    
-                    // Donut 回傳的通常是結構化文字內容
                     const detectedText = result[0]?.answer || "無法讀取內容";
 
-                    // 1. 添加背景圖作為參考 (DeckEdit 模式：背景圖片 + 浮動文字)
                     slide.addImage({ data: page.image, x: 0, y: 0, w: '100%', h: '100%', opacity: 0.1 });
-
-                    // 2. 模擬標題
-                    slide.addText("辨識結果 (標題)", {
+                    slide.addText(`頁面 ${i+1} 辨識結果`, {
                         x: 0.5, y: 0.3, w: '90%', h: 0.8,
-                        fontSize: 32, color: '1A365D', bold: true, fontFace: 'Arial'
+                        fontSize: 28, color: '1A365D', bold: true
                     });
-
-                    // 3. 添加 AI 辨識出的主要內容文字塊
                     slide.addText(detectedText.trim(), {
-                        x: 0.5, y: 1.5, w: '90%', h: 4,
-                        fontSize: 18, color: '2D3748',
+                        x: 0.5, y: 1.2, w: '90%', h: 4.5,
+                        fontSize: 16, color: '2D3748',
                         align: 'left', valign: 'top',
                         bullet: { type: 'number' },
-                        lineSpacing: 28
+                        lineSpacing: 24
                     });
-
-                    slide.addText("註：此文字方塊已轉為可編輯狀態。", {
-                        x: 0.5, y: 6.5, w: '90%', h: 0.4,
-                        fontSize: 10, color: 'A0AEC0', italic: true
-                    });
-
                 } catch (e) {
                     console.error("AI 處理出錯", e);
                 }
             }
 
-            pptx.writeFile({ fileName: `AI-Deck-Result.pptx` });
-            btn.innerText = '轉換成功！';
+            progressBar.style.width = `100%`;
+            percentLabel.innerText = `100%`;
+            statusLabel.innerText = `處理完成！正在準備下載...`;
+
+            pptx.writeFile({ fileName: `AI-Converted-Presentation.pptx` });
+            
             setTimeout(() => {
-                btn.innerText = '轉換為 PPTX';
-                btn.disabled = false;
-            }, 3000);
+                btn.innerText = '轉換成功！';
+                setTimeout(() => {
+                    btn.innerText = '轉換為 PPTX';
+                    btn.disabled = false;
+                }, 2000);
+            }, 1000);
         }
 
-        // 事件綁定
+        // --- 事件綁定核心邏輯 ---
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
 
-        dropZone.onclick = () => fileInput.click();
-        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('bg-blue-50', 'border-blue-400'); };
-        dropZone.ondragleave = () => dropZone.classList.remove('bg-blue-50', 'border-blue-400');
+        // 1. 點擊框框時觸發隱藏的 input
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // 2. 當 input 選擇檔案後觸發處理程序
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // 拖放邏輯
+        dropZone.ondragover = (e) => { 
+            e.preventDefault(); 
+            dropZone.classList.add('bg-blue-50', 'border-blue-400'); 
+        };
+        dropZone.ondragleave = () => { 
+            dropZone.classList.remove('bg-blue-50', 'border-blue-400'); 
+        };
         dropZone.ondrop = (e) => {
             e.preventDefault();
             dropZone.classList.remove('bg-blue-50', 'border-blue-400');
-            handleFile(e.dataTransfer.files[0]);
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
         };
-        fileInput.onchange = (e) => handleFile(e.target.files[0]);
-        document.getElementById('convert-btn').onclick = convertToPPTX;
 
-        // 啟動
         window.onload = initAI;
     </script>
 </body>
