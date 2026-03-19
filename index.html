@@ -14,6 +14,13 @@
   <!-- 載入核心 AI 與 PPTX 套件 (完全避開打包器，直接由瀏覽器執行) -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  
+  <!-- 載入 PDF.js 套件，用於在瀏覽器本地解析 PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    // 設定 PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
 
   <style>
     .glass-nav {
@@ -84,17 +91,18 @@
       <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500 rounded-full blur-3xl opacity-10"></div>
       
       <div id="dropzone" class="relative border-2 border-dashed border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-slate-100 rounded-xl p-8 text-center transition-all duration-200 ease-in-out cursor-pointer">
-        <input type="file" id="fileInput" class="hidden" accept=".png,.jpg,.jpeg,.webp" />
+        <!-- 擴充 accept 屬性支援 PDF -->
+        <input type="file" id="fileInput" class="hidden" accept=".png,.jpg,.jpeg,.webp,.pdf" />
         
         <!-- 初始上傳提示 -->
         <div id="uploadPrompt" class="flex flex-col items-center justify-center">
           <div class="bg-white p-4 rounded-full shadow-sm mb-4">
             <i id="uploadIcon" data-lucide="upload-cloud" class="h-10 w-10 text-slate-400 transition-colors"></i>
           </div>
-          <h3 class="text-xl font-semibold text-slate-700 mb-2">拖曳圖片檔案到此處</h3>
+          <h3 class="text-xl font-semibold text-slate-700 mb-2">拖曳圖片或 PDF 檔案到此處</h3>
           <p class="text-slate-500 mb-4 text-sm">或 <span class="text-blue-600 font-medium">點擊選擇檔案</span></p>
           <div class="flex gap-4 text-xs text-slate-400">
-            <span class="flex items-center gap-1"><i data-lucide="check-circle" class="h-3 w-3"></i> 圖片格式 (PNG/JPG)</span>
+            <span class="flex items-center gap-1"><i data-lucide="check-circle" class="h-3 w-3"></i> 支援格式 (PNG/JPG/PDF)</span>
           </div>
         </div>
 
@@ -137,14 +145,14 @@
       <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
         <div class="bg-blue-100 w-12 h-12 rounded-xl flex items-center justify-center mb-4 text-blue-600 font-bold text-xl">1</div>
         <h3 class="text-lg font-bold mb-2">上傳或拖曳檔案</h3>
-        <p class="text-slate-600 text-sm">將 NotebookLM 匯出的螢幕截圖或簡報圖片直接拖曳到轉換區域。</p>
+        <p class="text-slate-600 text-sm">將 NotebookLM 匯出的 PDF、螢幕截圖或簡報圖片直接拖曳到轉換區域。</p>
       </div>
       <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
         <div class="bg-blue-100 w-12 h-12 rounded-xl flex items-center justify-center mb-4">
           <i data-lucide="zap" class="h-6 w-6 text-blue-600"></i>
         </div>
         <h3 class="text-lg font-bold mb-2">本地 AI 瞬間偵測</h3>
-        <p class="text-slate-600 text-sm">瀏覽器會自動下載輕量級 AI 模型，並辨識圖片中所有無法選取的文字與排版。</p>
+        <p class="text-slate-600 text-sm">瀏覽器會自動下載輕量級 AI 模型，並辨識檔案中所有無法選取的文字與排版。</p>
       </div>
       <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
         <div class="bg-blue-100 w-12 h-12 rounded-xl flex items-center justify-center mb-4 text-blue-600 font-bold text-xl">3</div>
@@ -328,9 +336,9 @@
 
     // 更新 UI 顯示檔案資訊
     function handleFiles(file) {
-      // 簡單的檔案類型檢查
-      if (!file.type.match('image.*')) {
-        alert("請上傳圖片檔案 (PNG, JPG)");
+      // 擴充檔案類型檢查：支援圖片與 PDF
+      if (!file.type.match('image.*') && file.type !== 'application/pdf') {
+        alert("請上傳圖片檔案 (PNG, JPG) 或是 PDF 檔案");
         return;
       }
 
@@ -361,7 +369,7 @@
       dropzone.classList.add('border-slate-300', 'bg-slate-50');
     });
 
-    // 真實轉換邏輯 (呼叫 Tesseract 和 PptxGenJS)
+    // 真實轉換邏輯 (處理圖片與 PDF)
     convertBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (!currentFile || isConverting) return;
@@ -377,6 +385,10 @@
       statusTextEl.textContent = '初始化本地 AI 引擎...';
       progressBar.style.width = '0%';
 
+      let currentPageProcessing = 1;
+      let totalPagesProcessing = 1;
+      const isPdfMode = currentFile.type === 'application/pdf';
+
       try {
         // 1. 建立 Tesseract Worker
         const worker = await Tesseract.createWorker({
@@ -384,7 +396,11 @@
             if (m.status === 'recognizing text') {
               const p = Math.round(m.progress * 100);
               progressBar.style.width = p + '%';
-              statusTextEl.textContent = `正在辨識文字與排版... (${p}%)`;
+              if (isPdfMode) {
+                statusTextEl.textContent = `[第 ${currentPageProcessing}/${totalPagesProcessing} 頁] 辨識文字與排版... (${p}%)`;
+              } else {
+                statusTextEl.textContent = `正在辨識文字與排版... (${p}%)`;
+              }
             } else {
               statusTextEl.textContent = `載入模型中 (${m.status})...`;
             }
@@ -395,35 +411,87 @@
         await worker.loadLanguage('eng+chi_tra');
         await worker.initialize('eng+chi_tra');
 
-        // 2. 進行 OCR 辨識
-        const imageUrl = URL.createObjectURL(currentFile);
-        statusTextEl.textContent = '正在擷取文字特徵...';
-        
-        const { data: { text } } = await worker.recognize(imageUrl);
-
-        // 3. 建立 PPTX
-        statusTextEl.textContent = '正在重建 PowerPoint 檔案...';
-        
+        // 建立 PPTX 實例
         let pres = new pptxgen();
-        let slide = pres.addSlide();
-        
-        // 模擬排版：將取得的文字直接寫入投影片中
-        slide.addText(text || "未能辨識出任何文字", { 
-          x: 0.5, 
-          y: 0.5, 
-          w: "90%", 
-          h: "90%", 
-          fontSize: 16, 
-          color: "363636",
-          valign: "top"
-        });
 
-        // 觸發下載
+        // 判斷是否為 PDF 檔案
+        if (isPdfMode) {
+          statusTextEl.textContent = '正在解析 PDF 檔案...';
+          const fileUrl = URL.createObjectURL(currentFile);
+          
+          // 使用 PDF.js 載入 PDF
+          const loadingTask = pdfjsLib.getDocument(fileUrl);
+          const pdf = await loadingTask.promise;
+          totalPagesProcessing = pdf.numPages;
+
+          // 逐頁處理 PDF
+          for (let pageNum = 1; pageNum <= totalPagesProcessing; pageNum++) {
+            currentPageProcessing = pageNum;
+            statusTextEl.textContent = `[第 ${pageNum}/${totalPagesProcessing} 頁] 準備畫面...`;
+            progressBar.style.width = '0%';
+
+            const page = await pdf.getPage(pageNum);
+            // 放大比例以提升 OCR 辨識精準度
+            const viewport = page.getViewport({ scale: 2.0 }); 
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            const renderContext = {
+              canvasContext: ctx,
+              viewport: viewport
+            };
+            
+            // 渲染 PDF 頁面到 Canvas 上
+            await page.render(renderContext).promise;
+
+            // 將 Canvas 轉換為圖片供 Tesseract 使用
+            const pageImageUrl = canvas.toDataURL('image/png');
+            
+            // 辨識單頁圖片
+            const { data: { text } } = await worker.recognize(pageImageUrl);
+            
+            // 建立新的投影片並寫入文字
+            let slide = pres.addSlide();
+            slide.addText(text || "未能辨識出任何文字", { 
+              x: 0.5, 
+              y: 0.5, 
+              w: "90%", 
+              h: "90%", 
+              fontSize: 14, 
+              color: "363636",
+              valign: "top"
+            });
+          }
+          URL.revokeObjectURL(fileUrl);
+          
+        } else {
+          // 處理一般圖片
+          const imageUrl = URL.createObjectURL(currentFile);
+          statusTextEl.textContent = '正在擷取文字特徵...';
+          
+          const { data: { text } } = await worker.recognize(imageUrl);
+
+          let slide = pres.addSlide();
+          slide.addText(text || "未能辨識出任何文字", { 
+            x: 0.5, 
+            y: 0.5, 
+            w: "90%", 
+            h: "90%", 
+            fontSize: 16, 
+            color: "363636",
+            valign: "top"
+          });
+          URL.revokeObjectURL(imageUrl);
+        }
+
+        // 寫入並下載 PPTX
+        statusTextEl.textContent = '正在重建 PowerPoint 檔案...';
         await pres.writeFile({ fileName: `DeckEdit_Clone_${currentFile.name.split('.')[0]}.pptx` });
 
-        // 4. 清理資源
+        // 清理資源
         await worker.terminate();
-        URL.revokeObjectURL(imageUrl);
 
         statusTextEl.textContent = '🎉 轉換成功！';
         progressBar.style.width = '100%';
@@ -436,7 +504,7 @@
 
       } catch (error) {
         console.error("轉換錯誤:", error);
-        alert('轉換過程中發生錯誤。請確保您的網路允許下載初始的字元辨識 AI 模型。');
+        alert('轉換過程中發生錯誤。請確保檔案未損毀或網路連線正常。');
         resetUI();
       }
     });
