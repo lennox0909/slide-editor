@@ -323,10 +323,13 @@
       if (files.length) handleFiles(files[0]);
     }, false);
 
-    // 點擊上傳
-    dropzone.addEventListener('click', () => {
+    // 點擊上傳（修正無限迴圈問題）
+    dropzone.addEventListener('click', (e) => {
       if (!currentFile && !isConverting) {
-        fileInput.click();
+        // 確保點擊事件不是由 input 元素本身發出的，避免無限迴圈
+        if (e.target !== fileInput) {
+          fileInput.click();
+        }
       }
     });
 
