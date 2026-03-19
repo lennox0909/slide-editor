@@ -65,7 +65,10 @@
             <div id="model-status" class="mb-8 p-4 bg-blue-50 rounded-xl border border-blue-100">
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex flex-col">
-                        <span class="text-sm font-semibold text-blue-800 font-mono">AI ENGINE: DONUT_OCR_V3</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-semibold text-blue-800 font-mono">AI ENGINE: DONUT_OCR_V3</span>
+                            <span class="px-1.5 py-0.5 bg-blue-200 text-blue-700 text-[10px] rounded font-bold uppercase">Quantized</span>
+                        </div>
                         <span id="model-file-info" class="text-[10px] text-blue-500">等待初始化...</span>
                     </div>
                     <span id="model-percent" class="text-xs text-blue-600 font-bold">0%</span>
@@ -73,6 +76,10 @@
                 <div class="w-full bg-blue-200 rounded-full h-1.5">
                     <div id="model-progress" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
                 </div>
+                <p id="model-info" class="text-[11px] text-blue-500 mt-2 flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+                    加速提示：正在下載輕量化模型，下載後將永久快取於您的瀏覽器。
+                </p>
             </div>
 
             <!-- Step 2: Drop Zone -->
@@ -164,15 +171,21 @@
         async function initAI() {
             const hasWebGPU = await checkWebGPU();
             const { pipeline, env } = window.transformers;
+            
+            // 優化下載與快取策略
             env.allowLocalModels = false;
+            env.useBrowserCache = true; // 強制開啟瀏覽器快取
+            env.useCustomCache = true;  // 允許自定義快取
 
             try {
+                // 明確要求載入量化模型 (quantized: true)，檔案體積更小且速度更快
                 ocrPipeline = await pipeline('document-question-answering', 'Xenova/donut-base-finetuned-docvqa', {
+                    quantized: true, 
                     progress_callback: (p) => {
                         if (p.status === 'progress') {
                             document.getElementById('model-progress').style.width = `${p.progress}%`;
                             document.getElementById('model-percent').innerText = `${Math.round(p.progress)}%`;
-                            document.getElementById('model-file-info').innerText = `LOADING: ${p.file}`;
+                            document.getElementById('model-file-info').innerText = `正在獲取: ${p.file}`;
                         }
                     },
                     device: hasWebGPU ? 'webgpu' : 'cpu'
@@ -180,9 +193,10 @@
 
                 document.getElementById('model-status').className = 'mb-8 p-4 bg-green-50 rounded-xl border border-green-100';
                 document.getElementById('model-percent').innerText = 'READY';
-                document.getElementById('model-file-info').innerText = 'AI 模型已就緒';
+                document.getElementById('model-file-info').innerText = 'AI 模型已快取，下次將秒速載入';
             } catch (err) {
-                document.getElementById('model-info').innerText = '模型載入失敗，請檢查網路。';
+                console.error("AI 初始化錯誤:", err);
+                document.getElementById('model-info').innerText = '模型載入失敗，請嘗試更換穩定網路。';
             }
         }
 
@@ -268,7 +282,7 @@
                 resultDiv.innerHTML = `
                     <div class="flex flex-col items-center">
                         <div class="w-8 h-8 border-4 border-blue-100 border-t-blue-500 rounded-full animate-spin mb-2"></div>
-                        <p class="not-italic text-blue-600 font-medium">AI 分析中...</p>
+                        <p class="not-italic text-blue-600 font-medium text-xs">AI 分析中...</p>
                     </div>
                 `;
                 resultDiv.classList.add('loading-shimmer');
@@ -294,7 +308,7 @@
                     resultDiv.innerHTML = `
                         <div class="h-full overflow-y-auto scroll-custom text-left">
                             <h4 class="text-[10px] font-bold text-slate-800 mb-2 bg-slate-100 p-1 rounded inline-block">辨識結果</h4>
-                            <p class="text-slate-700 not-italic leading-relaxed whitespace-pre-wrap text-xs">${detectedText.trim()}</p>
+                            <p class="text-slate-700 not-italic leading-relaxed whitespace-pre-wrap text-[11px]">${detectedText.trim()}</p>
                         </div>
                     `;
 
