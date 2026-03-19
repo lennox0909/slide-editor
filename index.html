@@ -3,410 +3,404 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Taipei VGH-HR 本地 AI 轉換器</title>
+    <title>Taipei VGH-HR AI 背景清潔大師</title>
+    <!-- 引入前端框架與工具庫 -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入核心庫 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js"></script>
-    <!-- Transformers.js v3 (Support WebGPU) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <!-- 核心 AI 引擎：Transformers.js (支援 WebGPU 加速) -->
     <script type="module">
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
         window.transformers = { pipeline, env };
     </script>
+
     <style>
+        /* 介面細節樣式優化 */
         .drop-zone {
-            border: 2px dashed #cbd5e1;
-            transition: all 0.2s ease-in-out;
+            border: 3px dashed #e2e8f0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             cursor: pointer;
-            position: relative;
         }
         .drop-zone:hover {
             border-color: #3b82f6;
-            background-color: #f0f7ff;
-            transform: translateY(-2px);
+            background-color: #f0f9ff;
+            transform: scale(1.005);
         }
-        .loading-shimmer {
-            background: linear-gradient(90deg, #f8fafc 25%, #f1f5f9 50%, #f8fafc 75%);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s infinite;
+        .canvas-container {
+            position: relative;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
         }
-        @keyframes shimmer {
-            0% { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
-        }
-        .scroll-custom::-webkit-scrollbar { width: 6px; }
-        .scroll-custom::-webkit-scrollbar-track { background: #f1f5f9; }
-        .scroll-custom::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .scroll-custom::-webkit-scrollbar { width: 8px; }
+        .scroll-custom::-webkit-scrollbar-track { background: #f8fafc; }
+        .scroll-custom::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 20px; }
         
-        @keyframes pulse-blue {
-            0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.05); opacity: 0.8; }
+        /* 掃描線動畫 */
+        @keyframes scan {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
         }
-        .btn-ready {
-            animation: pulse-blue 2s infinite;
+        .scanning-line {
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+            position: absolute;
+            width: 100%;
+            z-index: 10;
+            animation: scan 2.5s linear infinite;
         }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen font-sans text-slate-900">
+<body class="bg-[#f4f7fa] min-h-screen font-sans">
 
-    <div class="max-w-5xl mx-auto py-12 px-4">
-        <!-- Header -->
-        <div class="text-center mb-10">
-            <h1 class="text-4xl font-extrabold text-slate-900 mb-2">Taipei VGH-HR 本地 AI 轉換器 by Leno Tsai</h1>
-            <p class="text-slate-600">100% 本地處理 • Donut 模型驅動 • WebGPU 加速</p>
-            <div id="gpu-status" class="mt-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
-                正在檢測 WebGPU 支援...
+    <!-- 頂部導覽列 -->
+    <nav class="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg">V</div>
+                <div>
+                    <h1 class="text-lg font-black text-slate-800 leading-tight">Taipei VGH-HR AI</h1>
+                    <p class="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Background Cleaner Pro</p>
+                </div>
+            </div>
+            <div id="gpu-chip" class="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full text-[10px] font-bold text-slate-600 border border-slate-200">
+                <span id="gpu-dot" class="w-2 h-2 bg-slate-400 rounded-full"></span>
+                <span id="gpu-text">WEBGPU CHECKING...</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-6xl mx-auto py-10 px-4">
+        
+        <!-- 模型與狀態儀表板 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+            <div class="lg:col-span-2 bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xs font-black text-slate-800 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        AI 核心狀態 (Donut_V3)
+                    </h2>
+                    <span id="model-percent" class="text-xs font-mono font-bold text-blue-600">0%</span>
+                </div>
+                <div class="w-full bg-slate-100 rounded-full h-2 mb-2 overflow-hidden">
+                    <div id="model-progress" class="bg-blue-600 h-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+                <p id="model-info" class="text-[10px] text-slate-400 font-bold uppercase tracking-tighter italic">模型僅需下載一次，將快取於瀏覽器。</p>
+            </div>
+            
+            <div class="bg-blue-600 rounded-3xl p-6 text-white shadow-xl shadow-blue-200 flex flex-col justify-center">
+                <h3 class="text-xs font-black opacity-80 uppercase mb-1">隱私與安全</h3>
+                <p class="text-lg font-bold tracking-tight">100% 本地端運算</p>
+                <p class="text-[10px] opacity-70 mt-1">資料絕不離開這台電腦。作者：Leno Tsai</p>
             </div>
         </div>
 
-        <!-- Main Card -->
-        <div class="bg-white rounded-2xl shadow-xl p-8 border border-slate-200">
+        <!-- 檔案上傳區塊 -->
+        <div class="bg-white rounded-[40px] shadow-2xl overflow-hidden border border-slate-200">
             
-            <!-- Step 1: Model Loading -->
-            <div id="model-status" class="mb-8 p-4 bg-blue-50 rounded-xl border border-blue-100">
-                <div class="flex items-center justify-between mb-2">
-                    <div class="flex flex-col">
-                        <div class="flex items-center gap-2">
-                            <span class="text-sm font-semibold text-blue-800 font-mono">AI ENGINE: DONUT_OCR_V3</span>
-                            <span class="px-1.5 py-0.5 bg-blue-200 text-blue-700 text-[10px] rounded font-bold uppercase">Quantized</span>
-                        </div>
-                        <span id="model-file-info" class="text-[10px] text-blue-500">等待初始化...</span>
+            <div id="drop-zone-container" class="p-10">
+                <div id="drop-zone" class="drop-zone rounded-[30px] p-24 flex flex-col items-center">
+                    <input type="file" id="file-input" class="hidden" accept="image/*,application/pdf">
+                    <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                        <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                     </div>
-                    <span id="model-percent" class="text-xs text-blue-600 font-bold">0%</span>
-                </div>
-                <div class="w-full bg-blue-200 rounded-full h-1.5">
-                    <div id="model-progress" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
-                </div>
-                <p id="model-info" class="text-[11px] text-blue-500 mt-2 flex items-center gap-1">
-                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
-                    加速提示：正在下載輕量化模型，下載後將永久快取於您的瀏覽器。
-                </p>
-            </div>
-
-            <!-- Step 2: Drop Zone -->
-            <!-- 隱藏的檔案輸入框移至外部，避免事件冒泡衝突 -->
-            <input type="file" id="file-input" class="hidden" accept="image/*,application/pdf">
-            <div id="drop-zone" class="drop-zone rounded-xl p-10 text-center mb-6">
-                <div class="flex flex-col items-center pointer-events-none">
-                    <svg class="w-12 h-12 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-                    </svg>
-                    <p class="text-lg font-medium text-slate-700">點擊或拖放 PDF 至此處</p>
-                    <p class="text-sm text-slate-500 mt-1">本地 AI 處理，檔案不離境</p>
+                    <h2 class="text-2xl font-black text-slate-800 mb-2">開始進行背景清潔</h2>
+                    <p class="text-slate-400 font-medium">拖放 PDF、PNG 或 JPG 簡報檔至此處</p>
                 </div>
             </div>
 
-            <!-- Step 3: Action & Comparison View -->
-            <div id="processing-view" class="hidden">
-                <div class="flex items-center justify-between mb-6">
-                    <h3 id="view-title" class="font-bold text-slate-800 text-xl">待處理投影片</h3>
-                    <div class="flex gap-3">
-                        <button id="convert-btn" disabled class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-blue-200 disabled:bg-slate-300 disabled:shadow-none">
-                            開始處理
+            <!-- 編輯與預覽區域 -->
+            <div id="editor-view" class="hidden animate-in fade-in duration-700">
+                <div class="flex border-b border-slate-100 bg-slate-50/30">
+                    <div class="flex-1 p-6 flex items-center justify-between">
+                        <h3 class="font-black text-slate-800 uppercase tracking-widest text-sm">投影片內容列表</h3>
+                        <button id="process-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-10 py-3.5 rounded-2xl font-black shadow-lg shadow-blue-100 transition-all disabled:bg-slate-200">
+                            開始 AI 智慧去字
                         </button>
                     </div>
                 </div>
 
-                <!-- 總體進度條 -->
-                <div id="conversion-status" class="hidden mb-8 p-4 bg-slate-900 rounded-xl text-white shadow-inner border border-slate-700">
-                    <div class="flex items-center justify-between mb-2">
-                        <span id="conversion-label" class="text-xs font-medium text-slate-400 uppercase tracking-widest">Processing Pages</span>
-                        <span id="conversion-percent" class="text-sm font-bold text-blue-400">0%</span>
+                <!-- 處理中進度顯示 -->
+                <div id="global-loader" class="hidden px-10 py-8 bg-slate-900 text-white flex items-center justify-between border-b border-slate-700">
+                    <div class="flex items-center gap-5 flex-1 mr-10">
+                        <div class="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin shadow-lg shadow-blue-500/20"></div>
+                        <div>
+                            <p id="loader-text" class="text-sm font-black italic">AI 正在偵測文字圖層...</p>
+                            <p class="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-widest">執行區域色彩補全演算法 (Inpainting)</p>
+                        </div>
                     </div>
-                    <div class="w-full bg-slate-800 rounded-full h-1">
-                        <div id="conversion-progress" class="bg-blue-500 h-1 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    <div class="text-right">
+                        <span id="loader-percent" class="text-4xl font-black text-blue-500">0%</span>
                     </div>
                 </div>
 
-                <!-- 匯出控制區域 (處理完成後顯示) -->
-                <div id="export-section" class="hidden mb-8 p-6 bg-green-50 rounded-2xl border border-green-100 shadow-sm animate-in fade-in duration-500">
-                    <div class="flex flex-col md:flex-row items-end gap-4">
-                        <div class="flex-1 w-full">
-                            <label class="block text-xs font-bold text-green-700 uppercase mb-2 tracking-wider">自訂檔案名稱</label>
-                            <input type="text" id="filename-input" value="AI-Converted-Presentation" class="w-full px-4 py-3 rounded-xl border border-green-200 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-slate-700 font-medium">
+                <!-- 匯出控制列 -->
+                <div id="export-bar" class="hidden p-8 bg-slate-50 border-b border-slate-200 animate-in slide-in-from-top duration-500">
+                    <div class="flex flex-col md:flex-row gap-6 items-end">
+                        <div class="flex-1 w-full text-left">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">匯出專案名稱</label>
+                            <input type="text" id="filename-input" value="Cleaned_VGH_Presentation" class="w-full bg-white border border-slate-200 px-5 py-4 rounded-2xl font-bold focus:ring-4 focus:ring-blue-100 outline-none transition-all">
                         </div>
-                        <button id="pptx-btn" class="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white px-10 py-3 rounded-xl font-black text-lg transition-all shadow-lg shadow-green-200 btn-ready flex items-center justify-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            PPTX
-                        </button>
+                        <div class="flex gap-4 w-full md:w-auto">
+                            <button id="download-bg-btn" class="flex-1 md:flex-none bg-slate-800 hover:bg-black text-white px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all">
+                                下載背景 ZIP
+                            </button>
+                            <button id="download-pptx-btn" class="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white px-10 py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-blue-200">
+                                匯出 PPTX
+                            </button>
+                        </div>
                     </div>
-                    <p class="mt-3 text-[11px] text-green-600 font-medium">提示：點擊按鈕後，請在瀏覽器彈出的視窗中選擇儲存位置。</p>
                 </div>
 
                 <!-- 投影片對照列表 -->
-                <div id="comparison-container" class="space-y-6 max-h-[600px] overflow-y-auto pr-2 scroll-custom">
-                    <!-- 投影片對照項將動態插入 -->
+                <div id="page-list" class="p-10 space-y-12 max-h-[800px] overflow-y-auto scroll-custom bg-[#fbfcfd]">
+                    <!-- 內容動態插入 -->
                 </div>
             </div>
-
         </div>
 
-        <div class="mt-8 text-center text-slate-400 text-sm font-medium">
-            <p>© 2024 AI Deck Studio • Powered by Donut Model & WebGPU</p>
-        </div>
+        <footer class="mt-12 text-center text-slate-400 font-bold text-[10px] uppercase tracking-[0.4em] opacity-60">
+            Taipei Veterans General Hospital • AI Project • 2024
+        </footer>
     </div>
 
     <script type="module">
+        // 設定 PDF Worker 路徑
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         let ocrPipeline = null;
-        let processedPages = [];
-        let recognitionResults = []; // 儲存辨識後的文字內容
+        let pagesData = []; // 儲存 { original: 原始圖, cleaned: 去字圖, text: 辨識文字 }
 
-        async function checkWebGPU() {
-            const statusEl = document.getElementById('gpu-status');
-            if (navigator.gpu) {
-                try {
-                    const adapter = await navigator.gpu.requestAdapter();
-                    if (adapter) {
-                        statusEl.innerText = '✅ WebGPU 加速已啟用';
-                        statusEl.className = 'mt-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700';
-                        return true;
-                    }
-                } catch (e) {}
+        // --- 初始化功能 ---
+        async function init() {
+            const hasGPU = !!navigator.gpu;
+            const chip = document.getElementById('gpu-chip');
+            const dot = document.getElementById('gpu-dot');
+            const text = document.getElementById('gpu-text');
+
+            chip.classList.remove('hidden');
+            if (hasGPU) {
+                dot.classList.replace('bg-slate-400', 'bg-green-500');
+                text.innerText = 'WEBGPU ACCELERATED';
+            } else {
+                text.innerText = 'CPU MODE';
             }
-            statusEl.innerText = '⚠️ WebGPU 不可用 (切換至 CPU)';
-            statusEl.className = 'mt-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700';
-            return false;
-        }
 
-        async function initAI() {
-            const hasWebGPU = await checkWebGPU();
             const { pipeline, env } = window.transformers;
-            
-            // 優化下載與快取策略
-            env.allowLocalModels = false;
-            env.useBrowserCache = true; // 強制開啟瀏覽器快取
-            env.useCustomCache = true;  // 允許自定義快取
+            env.useBrowserCache = true;
 
             try {
-                // 明確要求載入量化模型 (quantized: true)，檔案體積更小且速度更快
+                // 使用量化模型加速下載
                 ocrPipeline = await pipeline('document-question-answering', 'Xenova/donut-base-finetuned-docvqa', {
-                    quantized: true, 
+                    quantized: true,
                     progress_callback: (p) => {
                         if (p.status === 'progress') {
                             document.getElementById('model-progress').style.width = `${p.progress}%`;
                             document.getElementById('model-percent').innerText = `${Math.round(p.progress)}%`;
-                            document.getElementById('model-file-info').innerText = `正在獲取: ${p.file}`;
+                            document.getElementById('model-file-info').innerText = `正在下載 AI 模組: ${p.file}`;
                         }
                     },
-                    device: hasWebGPU ? 'webgpu' : 'cpu'
+                    device: hasGPU ? 'webgpu' : 'cpu'
                 });
-
-                document.getElementById('model-status').className = 'mb-8 p-4 bg-green-50 rounded-xl border border-green-100';
+                document.getElementById('model-info').innerText = '模型載入完成。檔案處理將維持 100% 離線。';
+                document.getElementById('model-progress').style.width = '100%';
                 document.getElementById('model-percent').innerText = 'READY';
-                document.getElementById('model-file-info').innerText = 'AI 模型已快取，下次將秒速載入';
-            } catch (err) {
-                console.error("AI 初始化錯誤:", err);
-                document.getElementById('model-info').innerText = '模型載入失敗，請嘗試更換穩定網路。';
+            } catch (e) {
+                document.getElementById('model-info').innerText = '載入失敗。';
             }
         }
 
-        async function handleFile(file) {
+        // --- 核心影像處理：智慧去字 (智慧區域色彩覆蓋) ---
+        async function smartInpaint(imgSrc) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
+                    const mask = new Uint8Array(canvas.width * canvas.height);
+
+                    // 1. 偵測文字高對比區域
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const i = (y * canvas.width + x) * 4;
+                            const bri = (data[i] + data[i+1] + data[i+2]) / 3;
+                            const neighbors = [
+                                (data[i-4] + data[i-3] + data[i-2]) / 3,
+                                (data[i+4] + data[i+5] + data[i+6]) / 3,
+                                (data[((y-1)*canvas.width + x)*4]) / 1 // 簡易取樣
+                            ];
+                            if (neighbors.some(n => Math.abs(n - bri) > 45)) mask[y * canvas.width + x] = 1;
+                        }
+                    }
+
+                    // 2. 區域像素補全 (智慧擦除)
+                    const output = ctx.createImageData(canvas.width, canvas.height);
+                    const out = output.data;
+                    for (let i = 0; i < data.length; i++) out[i] = data[i];
+
+                    const pSize = 6;
+                    for (let y = 0; y < canvas.height; y++) {
+                        for (let x = 0; x < canvas.width; x++) {
+                            const idx = y * canvas.width + x;
+                            if (mask[idx]) {
+                                let r=0, g=0, b=0, count=0;
+                                for (let dy=-pSize; dy<=pSize; dy++) {
+                                    for (let dx=-pSize; dx<=pSize; dx++) {
+                                        const ny=y+dy, nx=x+dx;
+                                        if (ny>=0 && ny<canvas.height && nx>=0 && nx<canvas.width) {
+                                            const nidx = ny * canvas.width + nx;
+                                            if (!mask[nidx]) {
+                                                const p = nidx * 4;
+                                                r+=data[p]; g+=data[p+1]; b+=data[p+2]; count++;
+                                            }
+                                        }
+                                    }
+                                }
+                                if (count > 0) {
+                                    const p = idx * 4;
+                                    out[p]=r/count; out[p+1]=g/count; out[p+2]=b/count;
+                                }
+                            }
+                        }
+                    }
+                    ctx.putImageData(output, 0, 0);
+                    resolve(canvas.toDataURL('image/jpeg', 0.8));
+                };
+                img.src = imgSrc;
+            });
+        }
+
+        // --- 處理上傳 ---
+        async function handleFiles(file) {
             if (!file) return;
-            document.getElementById('processing-view').classList.remove('hidden');
-            document.getElementById('conversion-status').classList.add('hidden');
-            document.getElementById('export-section').classList.add('hidden'); // 重置時隱藏匯出區
-            const container = document.getElementById('comparison-container');
-            container.innerHTML = '';
-            processedPages = [];
-            recognitionResults = [];
+            document.getElementById('drop-zone-container').classList.add('hidden');
+            document.getElementById('editor-view').classList.remove('hidden');
+            const list = document.getElementById('page-list');
+            list.innerHTML = '';
+            pagesData = [];
 
             if (file.type === 'application/pdf') {
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-                const maxPages = Math.min(pdf.numPages, 10);
-                
-                for (let i = 1; i <= maxPages; i++) {
+                const buf = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(buf).promise;
+                for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
                     const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 1.5 }); 
+                    const vp = page.getViewport({ scale: 1.5 });
                     const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
-
-                    await page.render({ canvasContext: context, viewport: viewport }).promise;
-                    const imgData = canvas.toDataURL('image/png');
-                    addComparisonRow(imgData, i);
-                    processedPages.push({ image: imgData });
+                    canvas.width = vp.width; canvas.height = vp.height;
+                    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+                    const src = canvas.toDataURL('image/png');
+                    pagesData.push({ original: src, cleaned: null, text: null });
+                    renderItem(src, i - 1);
                 }
             } else {
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    addComparisonRow(e.target.result, 1);
-                    processedPages.push({ image: e.target.result });
+                    pagesData.push({ original: e.target.result, cleaned: null, text: null });
+                    renderItem(e.target.result, 0);
                 };
                 reader.readAsDataURL(file);
             }
-            document.getElementById('convert-btn').disabled = false;
-            document.getElementById('convert-btn').innerText = '開始處理';
+            document.getElementById('process-btn').disabled = false;
         }
 
-        function addComparisonRow(src, index) {
-            const row = document.createElement('div');
-            row.id = `row-${index-1}`;
-            row.className = 'grid grid-cols-1 md:grid-cols-2 gap-4 items-start bg-slate-50 p-4 rounded-xl border border-slate-100';
-            row.innerHTML = `
-                <div class="space-y-2">
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Original Slide ${index}</span>
-                    <img src="${src}" class="w-full rounded-lg shadow-sm border border-slate-200">
+        function renderItem(src, idx) {
+            const div = document.createElement('div');
+            div.className = 'grid grid-cols-1 lg:grid-cols-2 gap-10 border-b border-slate-100 pb-10';
+            div.innerHTML = `
+                <div class="space-y-4">
+                    <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Original ${idx+1}</h4>
+                    <div class="canvas-container bg-white border border-slate-200">
+                        <img src="${src}" class="w-full">
+                    </div>
                 </div>
-                <div class="space-y-2">
-                    <span class="text-[10px] font-bold text-blue-500 uppercase tracking-tighter">AI Recognition Result</span>
-                    <div id="result-${index-1}" class="w-full aspect-[4/3] bg-white rounded-lg border border-slate-200 p-4 text-slate-400 italic text-sm flex items-center justify-center text-center overflow-hidden">
-                        等待處理...
+                <div class="space-y-4">
+                    <h4 class="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em]">Cleaned Layer</h4>
+                    <div id="clean-${idx}" class="canvas-container bg-slate-50 border-2 border-dashed border-slate-200 aspect-video flex items-center justify-center">
+                        <span class="text-[10px] font-bold text-slate-300 italic">WAITING FOR AI...</span>
                     </div>
                 </div>
             `;
-            document.getElementById('comparison-container').appendChild(row);
+            document.getElementById('page-list').appendChild(div);
         }
 
-        // 開始處理邏輯 (僅做辨識與儲存)
-        async function convertToPPTX() {
-            const btn = document.getElementById('convert-btn');
-            const statusBox = document.getElementById('conversion-status');
-            const progressBar = document.getElementById('conversion-progress');
-            const percentLabel = document.getElementById('conversion-percent');
-            
+        // --- 啟動處理程序 ---
+        async function runAI() {
+            const btn = document.getElementById('process-btn');
+            const loader = document.getElementById('global-loader');
             btn.disabled = true;
-            btn.innerText = '處理中...';
-            statusBox.classList.remove('hidden');
-            document.getElementById('export-section').classList.add('hidden');
-            document.getElementById('view-title').innerText = '正在分析內容...';
+            loader.classList.remove('hidden');
 
-            recognitionResults = [];
-            const total = processedPages.length;
+            for (let i = 0; i < pagesData.length; i++) {
+                const preview = document.getElementById(`clean-${i}`);
+                preview.innerHTML = `<div class="scanning-line"></div><p class="text-[10px] font-black text-blue-500 z-20">正在分析文字並擦除背景...</p>`;
+                preview.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-            for (let i = 0; i < total; i++) {
-                const page = processedPages[i];
-                const resultDiv = document.getElementById(`result-${i}`);
-                
-                resultDiv.innerHTML = `
-                    <div class="flex flex-col items-center">
-                        <div class="w-8 h-8 border-4 border-blue-100 border-t-blue-500 rounded-full animate-spin mb-2"></div>
-                        <p class="not-italic text-blue-600 font-medium text-xs">AI 分析中...</p>
-                    </div>
-                `;
-                resultDiv.classList.add('loading-shimmer');
-                resultDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // 進度百分比更新
+                const percent = Math.round((i / pagesData.length) * 100);
+                document.getElementById('loader-percent').innerText = `${percent}%`;
 
-                const currentProgress = Math.round((i / total) * 100);
-                progressBar.style.width = `${currentProgress}%`;
-                percentLabel.innerText = `${currentProgress}%`;
+                // 1. OCR 辨識
+                const result = await ocrPipeline(pagesData[i].original, "Extract text.");
+                pagesData[i].text = result[0]?.answer || "";
 
-                try {
-                    const prompt = "What is written in this document?";
-                    const result = await ocrPipeline(page.image, prompt);
-                    const detectedText = result[0]?.answer || "無法讀取內容";
-                    
-                    // 儲存結果
-                    recognitionResults.push({
-                        originalImage: page.image,
-                        text: detectedText.trim()
-                    });
+                // 2. 影像補全
+                const cleaned = await smartInpaint(pagesData[i].original);
+                pagesData[i].cleaned = cleaned;
 
-                    // 更新 UI
-                    resultDiv.classList.remove('loading-shimmer', 'flex', 'items-center', 'justify-center', 'text-center');
-                    resultDiv.innerHTML = `
-                        <div class="h-full overflow-y-auto scroll-custom text-left">
-                            <h4 class="text-[10px] font-bold text-slate-800 mb-2 bg-slate-100 p-1 rounded inline-block">辨識結果</h4>
-                            <p class="text-slate-700 not-italic leading-relaxed whitespace-pre-wrap text-[11px]">${detectedText.trim()}</p>
-                        </div>
-                    `;
-
-                } catch (e) {
-                    resultDiv.innerText = "處理失敗";
-                    recognitionResults.push({ originalImage: page.image, text: "處理失敗" });
-                    console.error(e);
-                }
+                // 3. 更新 UI
+                preview.innerHTML = `<img src="${cleaned}" class="w-full h-full object-contain">`;
             }
 
-            // 處理結束
-            progressBar.style.width = `100%`;
-            percentLabel.innerText = `100%`;
-            btn.innerText = '處理完成';
-            document.getElementById('view-title').innerText = '辨識完畢';
-            
-            // 顯示匯出區域
-            document.getElementById('export-section').classList.remove('hidden');
-            document.getElementById('export-section').scrollIntoView({ behavior: 'smooth' });
+            document.getElementById('loader-percent').innerText = '100%';
+            document.getElementById('export-bar').classList.remove('hidden');
+            document.getElementById('export-bar').scrollIntoView({ behavior: 'smooth' });
         }
 
-        // 執行最終導出
-        function exportToPPTX() {
-            if (recognitionResults.length === 0) return;
+        // --- 匯出功能 ---
+        async function saveZIP() {
+            const zip = new JSZip();
+            const folder = zip.folder("Cleaned_Images");
+            const name = document.getElementById('filename-input').value;
+            pagesData.forEach((p, i) => {
+                folder.file(`${name}_${i+1}.jpg`, p.cleaned.split(',')[1], {base64: true});
+            });
+            const content = await zip.generateAsync({type: "blob"});
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = `${name}_Backgrounds.zip`;
+            link.click();
+        }
 
-            const btn = document.getElementById('pptx-btn');
-            const customName = document.getElementById('filename-input').value || 'Converted-Deck';
-            
-            btn.disabled = true;
-            btn.innerText = '正在封裝...';
-
+        function savePPTX() {
             const pptx = new PptxGenJS();
+            const name = document.getElementById('filename-input').value;
             pptx.layout = 'LAYOUT_WIDE';
-
-            recognitionResults.forEach((res, idx) => {
+            pagesData.forEach((p, i) => {
                 const slide = pptx.addSlide();
-                // 底圖淡化處理
-                slide.addImage({ data: res.originalImage, x: 0, y: 0, w: '100%', h: '100%', opacity: 0.05 });
-                // 標題與內文
-                slide.addText(`Slide ${idx + 1} Recognition`, { x: 0.5, y: 0.3, w: '90%', fontSize: 24, color: '3b82f6', bold: true });
-                slide.addText(res.text, {
-                    x: 0.5, y: 1.2, w: '90%', h: 5.5,
-                    fontSize: 16, color: '333333', align: 'left', valign: 'top'
-                });
+                slide.addImage({ data: p.cleaned, x: 0, y: 0, w: '100%', h: '100%' });
+                slide.addText(p.text, { x: 0.5, y: 0.5, w: '90%', h: '85%', fontSize: 18, color: '333333' });
             });
-
-            // 觸發下載
-            pptx.writeFile({ fileName: `${customName}.pptx` }).then(() => {
-                btn.disabled = false;
-                btn.innerText = 'PPTX';
-            }).catch(err => {
-                console.error(err);
-                btn.disabled = false;
-                btn.innerText = 'PPTX (失敗)';
-            });
+            pptx.writeFile({ fileName: `${name}.pptx` });
         }
 
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('file-input');
+        // 事件綁定
+        const dz = document.getElementById('drop-zone');
+        const fi = document.getElementById('file-input');
+        dz.onclick = () => fi.click();
+        fi.onchange = (e) => handleFiles(e.target.files[0]);
+        document.getElementById('process-btn').onclick = runAI;
+        document.getElementById('download-bg-btn').onclick = saveZIP;
+        document.getElementById('download-pptx-btn').onclick = savePPTX;
 
-        // 明確綁定點擊事件到隱藏的輸入框
-        if (dropZone && fileInput) {
-            dropZone.addEventListener('click', (e) => {
-                e.preventDefault();
-                fileInput.click();
-            });
-
-            fileInput.addEventListener('change', (e) => {
-                if (e.target.files && e.target.files.length > 0) {
-                    handleFile(e.target.files[0]);
-                    // 清空數值，確保同檔案可重複觸發
-                    e.target.value = '';
-                }
-            });
-
-            // 拖放邏輯優化
-            dropZone.addEventListener('dragover', (e) => { 
-                e.preventDefault(); 
-                dropZone.classList.add('bg-blue-50', 'border-blue-400'); 
-            });
-            dropZone.addEventListener('dragleave', () => { 
-                dropZone.classList.remove('bg-blue-50', 'border-blue-400'); 
-            });
-            dropZone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropZone.classList.remove('bg-blue-50', 'border-blue-400');
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                    handleFile(e.dataTransfer.files[0]);
-                }
-            });
-        }
-
-        document.getElementById('convert-btn').onclick = convertToPPTX;
-        document.getElementById('pptx-btn').onclick = exportToPPTX;
-        
-        window.onload = initAI;
+        window.onload = init;
     </script>
 </body>
 </html>
