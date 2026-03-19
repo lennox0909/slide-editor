@@ -40,31 +40,7 @@
           </div>
           <span class="font-bold text-xl tracking-tight">DeckEdit<span class="text-blue-600">.clone</span></span>
         </div>
-        
-        <!-- 桌面版選單 -->
-        <div class="hidden md:flex space-x-8 items-center">
-          <a href="#" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">NotebookLM 轉 PPTX</a>
-          <a href="#comparison" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">工具比較</a>
-          <a href="#faq" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">常見問題</a>
-          <div class="flex items-center gap-1 text-sm font-medium text-slate-600 cursor-pointer hover:text-slate-900">
-            繁體中文 <i data-lucide="chevron-down" class="h-4 w-4"></i>
-          </div>
-        </div>
-
-        <!-- 手機版漢堡選單按鈕 -->
-        <div class="md:hidden flex items-center">
-          <button id="mobileMenuBtn" class="text-slate-600">
-            <i id="menuIcon" data-lucide="menu" class="h-6 w-6"></i>
-          </button>
-        </div>
       </div>
-    </div>
-    
-    <!-- 手機版展開選單 -->
-    <div id="mobileMenu" class="hidden md:hidden bg-white border-b border-slate-200 px-4 pt-2 pb-4 space-y-2 shadow-lg">
-      <a href="#" class="block py-2 text-slate-600 font-medium">NotebookLM 轉 PPTX</a>
-      <a href="#comparison" class="block py-2 text-slate-600 font-medium">工具比較</a>
-      <a href="#faq" class="block py-2 text-slate-600 font-medium">常見問題</a>
     </div>
   </nav>
 
@@ -161,54 +137,6 @@
       </div>
     </div>
 
-    <!-- 比較表 -->
-    <div id="comparison" class="mb-20 scroll-mt-24">
-      <h2 class="text-3xl font-bold text-center mb-8">為什麼選擇 DeckEdit？</h2>
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse">
-            <thead>
-              <tr class="bg-slate-50 border-b border-slate-200">
-                <th class="p-4 font-semibold text-slate-600 w-1/3">功能對比</th>
-                <th class="p-4 font-bold text-blue-600 w-1/3 bg-blue-50/50">DeckEdit (本站)</th>
-                <th class="p-4 font-semibold text-slate-500 w-1/3">其他第三方工具</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-              <tr class="hover:bg-slate-50/50 transition-colors">
-                <td class="p-4 text-slate-700 font-medium">價格</td>
-                <td class="p-4 text-slate-900 bg-blue-50/20 font-medium flex items-center gap-2">
-                  <i data-lucide="check-circle" class="h-4 w-4 text-green-500"></i> 100% 免費
-                </td>
-                <td class="p-4 text-slate-500">需付費訂閱或買斷</td>
-              </tr>
-              <tr class="hover:bg-slate-50/50 transition-colors">
-                <td class="p-4 text-slate-700 font-medium">處理方式</td>
-                <td class="p-4 text-slate-900 bg-blue-50/20 font-medium flex items-center gap-2">
-                  <i data-lucide="check-circle" class="h-4 w-4 text-green-500"></i> 100% 本地 (瀏覽器)
-                </td>
-                <td class="p-4 text-slate-500">雲端或需安裝龐大軟體</td>
-              </tr>
-              <tr class="hover:bg-slate-50/50 transition-colors">
-                <td class="p-4 text-slate-700 font-medium">隱私安全</td>
-                <td class="p-4 text-slate-900 bg-blue-50/20 font-medium flex items-center gap-2">
-                  <i data-lucide="check-circle" class="h-4 w-4 text-green-500"></i> 最高 (檔案不離機)
-                </td>
-                <td class="p-4 text-slate-500">中等 (需上傳伺服器)</td>
-              </tr>
-              <tr class="hover:bg-slate-50/50 transition-colors">
-                <td class="p-4 text-slate-700 font-medium">文字可編輯性</td>
-                <td class="p-4 text-slate-900 bg-blue-50/20 font-medium flex items-center gap-2">
-                  <i data-lucide="check-circle" class="h-4 w-4 text-green-500"></i> 真實可編輯文字方塊
-                </td>
-                <td class="p-4 text-slate-500">圖片或僅 AI 重新排版</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
     <!-- 常見問題 -->
     <div id="faq" class="max-w-3xl mx-auto scroll-mt-24 mb-16">
       <h2 class="text-3xl font-bold text-center mb-8">常見問題</h2>
@@ -268,19 +196,6 @@
 
     let currentFile = null;
     let isConverting = false;
-
-    // 手機版選單切換
-    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-    const mobileMenu = document.getElementById('mobileMenu');
-    const menuIcon = document.getElementById('menuIcon');
-    let isMenuOpen = false;
-
-    mobileMenuBtn.addEventListener('click', () => {
-      isMenuOpen = !isMenuOpen;
-      mobileMenu.classList.toggle('hidden');
-      menuIcon.setAttribute('data-lucide', isMenuOpen ? 'x' : 'menu');
-      lucide.createIcons();
-    });
 
     // 處理拖放事件的預設行為
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
