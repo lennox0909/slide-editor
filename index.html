@@ -1,472 +1,260 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Taipei VGH-HR AI 背景清潔大師 - GPU 加速版</title>
-    <!-- 引入前端框架與工具庫 -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    
-    <!-- 核心 AI 引擎：Transformers.js v3 (穩定支援 WebGPU 加速) -->
-    <script type="module">
-        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3';
-        window.transformers = { pipeline, env };
-    </script>
+import React, { useState } from 'react';
+import { 
+  Cpu, 
+  Layers, 
+  Layout, 
+  Search, 
+  FileText, 
+  Download, 
+  Image as ImageIcon, 
+  Zap, 
+  Target, 
+  ShieldCheck,
+  ChevronRight,
+  Monitor,
+  Globe
+} from 'lucide-react';
 
-    <style>
-        /* 介面細節樣式優化 */
-        .drop-zone {
-            border: 3px dashed #e2e8f0;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            cursor: pointer;
-        }
-        .drop-zone:hover {
-            border-color: #3b82f6;
-            background-color: #f0f9ff;
-            transform: scale(1.005);
-        }
-        .canvas-container {
-            position: relative;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-            border-radius: 12px;
-            overflow: hidden;
-        }
-        .scroll-custom::-webkit-scrollbar { width: 8px; }
-        .scroll-custom::-webkit-scrollbar-track { background: #f8fafc; }
-        .scroll-custom::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 20px; }
-        
-        /* 掃描線動畫 */
-        @keyframes scan {
-            0% { transform: translateY(-100%); }
-            100% { transform: translateY(100%); }
-        }
-        .scanning-line {
-            height: 3px;
-            background: linear-gradient(90deg, transparent, #3b82f6, transparent);
-            position: absolute;
-            width: 100%;
-            z-index: 10;
-            animation: scan 2.5s linear infinite;
-        }
-    </style>
-</head>
-<body class="bg-[#f4f7fa] min-h-screen font-sans">
+const App = () => {
+  const [activeStep, setActiveStep] = useState(0);
 
-    <!-- 頂部導覽列 -->
-    <nav class="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-50 shadow-sm">
-        <div class="max-w-6xl mx-auto flex justify-between items-center">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg">V</div>
+  const steps = [
+    {
+      title: "影像預處理",
+      subtitle: "Image Pre-processing",
+      desc: "當使用者上傳 NotebookLM 的 PDF 或截圖時，系統會先將每一頁簡報轉換為高解析度的圖片。這是為了確保後續 OCR（光學字元辨識）的準確度。",
+      icon: <Monitor className="w-6 h-6" />,
+      color: "bg-blue-500"
+    },
+    {
+      title: "視覺與文字偵測",
+      subtitle: "AI Vision & OCR Detection",
+      desc: "這是最關鍵的一步。DeckEdit 使用 AI 模型掃描圖片，辨識出文字的內容、字體大小、顏色以及在頁面上的精確座標。",
+      icon: <Search className="w-6 h-6" />,
+      color: "bg-indigo-500"
+    },
+    {
+      title: "層級與結構解析",
+      subtitle: "Layout Reconstruction",
+      desc: "系統不僅是辨識文字，還會分析文字間的邏輯關係（例如：哪個是標題 H1、哪個是清單項目）。它會嘗試將原本鎖死在圖片中的元素「拆解」成獨立的物件區塊。",
+      icon: <Layout className="w-6 h-6" />,
+      color: "bg-purple-500"
+    },
+    {
+      title: "背景與文字分離",
+      subtitle: "De-layering",
+      desc: "為了讓簡報看起來自然，DeckEdit 會嘗試過濾掉 NotebookLM 原本的浮水印，並將辨識出的文字從原圖中分離，轉化為可點擊、可修改的文字層。",
+      icon: <Layers className="w-6 h-6" />,
+      color: "bg-pink-500"
+    },
+    {
+      title: "背景圖片導出",
+      subtitle: "Background Export",
+      desc: "使用者可以把上個步驟分離出來的純淨背景，另存成為獨立的圖片檔案，方便進行其他設計用途。",
+      icon: <ImageIcon className="w-6 h-6" />,
+      color: "bg-orange-500"
+    },
+    {
+      title: "簡報封裝與導出",
+      subtitle: "PPTX Packaging",
+      desc: "最後，系統將解析出的文字區塊、位置資訊與背景圖重新封裝成一個標準的 .pptx 檔案，確保其能在 Microsoft PowerPoint 或 Google Slides 中開啟並編輯。",
+      icon: <FileText className="w-6 h-6" />,
+      color: "bg-green-500"
+    }
+  ];
+
+  const techStacks = [
+    {
+      category: "OCR 模型",
+      items: [
+        { name: "Tesseract.js / WebAssembly", detail: "強調「本地偵測」，在瀏覽器端執行 OCR，節省伺服器成本並保護隱私。" },
+        { name: "Google Cloud / Azure Vision", detail: "用於處理更複雜的版面分析（Layout Analysis）與多國語言混合辨識。" }
+      ],
+      icon: <Cpu className="text-blue-600" />
+    },
+    {
+      category: "前端處理框架",
+      items: [
+        { name: "PptxGenJS", detail: "一款常用的 JavaScript 函式庫，用於在瀏覽器端直接生成 PowerPoint 檔案。" },
+        { name: "PDF.js", detail: "由 Mozilla 開發，用於解析與渲染上傳的 PDF 檔案。" }
+      ],
+      icon: <Layout className="text-purple-600" />
+    },
+    {
+      category: "語言處理技術",
+      items: [
+        { name: "自動偵測與優化", detail: "針對中、英、日文進行特定的編碼與間距優化，修復 OCR 常見的空格與標點問題。" }
+      ],
+      icon: <Globe className="text-green-600" />
+    }
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100">
+      {/* Hero Section */}
+      <header className="relative bg-white border-b border-slate-200 overflow-hidden">
+        <div className="absolute inset-0 opacity-5 pointer-events-none">
+          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(#4f46e5_1px,transparent_1px)] [background-size:20px_20px]"></div>
+        </div>
+        <div className="max-w-6xl mx-auto px-6 py-20 text-center relative z-10">
+          <div className="inline-flex items-center space-x-2 bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium mb-6">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+            </span>
+            <span>解析 DeckEdit 的 AI 核心</span>
+          </div>
+          <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight text-slate-900 mb-6">
+            讓 NotebookLM 生成的簡報<br/>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">重獲編輯自由</span>
+          </h1>
+          <p className="max-w-2xl mx-auto text-lg text-slate-600 leading-relaxed">
+            深入探討 DeckEdit 如何運用電腦視覺與 OCR 技術，將靜態圖片轉化為結構化的可編輯 PPTX 檔案。
+          </p>
+        </div>
+      </header>
+
+      {/* Core Process Section */}
+      <section className="max-w-6xl mx-auto px-6 py-24">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
+          <div>
+            <h2 className="text-3xl font-bold text-slate-900 flex items-center">
+              <Zap className="w-8 h-8 mr-2 text-yellow-500 fill-yellow-500" />
+              核心處理步驟
+            </h2>
+            <p className="text-slate-500 mt-2">從上傳到導出的六大 AI 轉化階段</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-1 space-y-4">
+            {steps.map((step, idx) => (
+              <button
+                key={idx}
+                onClick={() => setActiveStep(idx)}
+                className={`w-full text-left p-4 rounded-xl transition-all duration-200 border ${
+                  activeStep === idx 
+                  ? 'bg-white border-blue-200 shadow-md translate-x-2' 
+                  : 'bg-transparent border-transparent hover:bg-slate-100 text-slate-500'
+                }`}
+              >
+                <div className="flex items-center space-x-4">
+                  <div className={`p-2 rounded-lg text-white ${activeStep === idx ? step.color : 'bg-slate-300'}`}>
+                    {step.icon}
+                  </div>
+                  <div>
+                    <h3 className={`font-bold ${activeStep === idx ? 'text-slate-900' : ''}`}>{step.title}</h3>
+                    <p className="text-xs opacity-70 uppercase tracking-wider">{step.subtitle}</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+          
+          <div className="lg:col-span-2 bg-white rounded-3xl p-8 shadow-xl border border-slate-100 flex flex-col justify-center min-h-[400px]">
+             <div className="flex items-center space-x-4 mb-6">
+                <div className={`p-4 rounded-2xl text-white ${steps[activeStep].color} shadow-lg shadow-${steps[activeStep].color}/20`}>
+                  {steps[activeStep].icon}
+                </div>
                 <div>
-                    <h1 class="text-lg font-black text-slate-800 leading-tight">Taipei VGH-HR AI</h1>
-                    <p class="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Background Cleaner Pro (High Performance)</p>
+                  <h3 className="text-2xl font-bold text-slate-900">{steps[activeStep].title}</h3>
+                  <p className="text-blue-600 font-medium">{steps[activeStep].subtitle}</p>
                 </div>
-            </div>
-            <div id="gpu-chip" class="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full text-[10px] font-bold text-slate-600 border border-slate-200">
-                <span id="gpu-dot" class="w-2 h-2 bg-slate-400 rounded-full"></span>
-                <span id="gpu-text">GPU 狀態確認中...</span>
-            </div>
+             </div>
+             <p className="text-xl text-slate-600 leading-relaxed mb-8">
+               {steps[activeStep].desc}
+             </p>
+             <div className="mt-auto pt-6 border-t border-slate-50 flex justify-between items-center text-sm text-slate-400">
+               <span>步驟 {activeStep + 1} / {steps.length}</span>
+               <div className="flex space-x-1">
+                 {steps.map((_, i) => (
+                   <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${activeStep === i ? 'w-8 bg-blue-600' : 'w-2 bg-slate-200'}`} />
+                 ))}
+               </div>
+             </div>
+          </div>
         </div>
-    </nav>
+      </section>
 
-    <div class="max-w-6xl mx-auto py-10 px-4">
-        
-        <!-- 模型與狀態儀表板 -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
-            <div class="lg:col-span-2 bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-xs font-black text-slate-800 flex items-center gap-2">
-                        <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                        AI 核心狀態 (WebGPU Optimized)
-                    </h2>
-                    <span id="model-percent" class="text-xs font-mono font-bold text-blue-600">0%</span>
+      {/* Tech Stack Section */}
+      <section className="bg-slate-900 text-white py-24">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold mb-4">可能使用的模型與技術棧</h2>
+            <p className="text-slate-400">基於「本地處理」與「跨語言」特性的技術推測</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {techStacks.map((stack, idx) => (
+              <div key={idx} className="bg-slate-800/50 backdrop-blur border border-slate-700 p-8 rounded-3xl hover:bg-slate-800 transition-colors">
+                <div className="bg-slate-700/50 p-3 rounded-2xl w-fit mb-6">
+                  {stack.icon}
                 </div>
-                <div class="w-full bg-slate-100 rounded-full h-2 mb-2 overflow-hidden">
-                    <div id="model-progress" class="bg-blue-600 h-full transition-all duration-500" style="width: 0%"></div>
-                </div>
-                <p id="model-info" class="text-[10px] text-slate-400 font-bold uppercase tracking-tighter italic">正在請求高效能 GPU 配置以優化推論速度。</p>
-            </div>
-            
-            <div class="bg-blue-600 rounded-3xl p-6 text-white shadow-xl shadow-blue-200 flex flex-col justify-center">
-                <h3 class="text-xs font-black opacity-80 uppercase mb-1">隱私與安全</h3>
-                <p class="text-lg font-bold tracking-tight">100% 離線本地運算</p>
-                <p class="text-[10px] opacity-70 mt-1">硬體加速已啟動。作者：Leno Tsai</p>
-            </div>
+                <h3 className="text-xl font-bold mb-6 border-b border-slate-700 pb-4">{stack.category}</h3>
+                <ul className="space-y-6">
+                  {stack.items.map((item, i) => (
+                    <li key={i}>
+                      <h4 className="font-bold text-blue-400 mb-1">{item.name}</h4>
+                      <p className="text-sm text-slate-400 leading-relaxed">{item.detail}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
+      </section>
 
-        <!-- 檔案上傳區塊 -->
-        <div class="bg-white rounded-[40px] shadow-2xl overflow-hidden border border-slate-200">
-            
-            <div id="drop-zone-container" class="p-10 relative">
-                <input type="file" id="file-input" class="absolute inset-0 opacity-0 pointer-events-none w-0 h-0" accept="image/*,application/pdf">
-                <div id="drop-zone" class="drop-zone rounded-[30px] p-24 flex flex-col items-center">
-                    <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mb-6 shadow-inner pointer-events-none">
-                        <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                    </div>
-                    <div class="pointer-events-none text-center">
-                        <h2 class="text-2xl font-black text-slate-800 mb-2">開始進行背景清潔</h2>
-                        <p class="text-slate-400 font-medium text-lg">點擊此處或拖放檔案進行高效能 AI 辨識</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 編輯與預覽區域 -->
-            <div id="editor-view" class="hidden animate-in fade-in duration-700">
-                <div class="flex border-b border-slate-100 bg-slate-50/30">
-                    <div class="flex-1 p-6 flex items-center justify-between">
-                        <h3 class="font-black text-slate-800 uppercase tracking-widest text-sm">投影片內容列表</h3>
-                        <button id="process-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-10 py-3.5 rounded-2xl font-black shadow-lg shadow-blue-100 transition-all disabled:bg-slate-200">
-                            開始高效能去字
-                        </button>
-                    </div>
-                </div>
-
-                <!-- 處理中進度顯示 -->
-                <div id="global-loader" class="hidden px-10 py-8 bg-slate-900 text-white flex items-center justify-between border-b border-slate-700">
-                    <div class="flex items-center gap-5 flex-1 mr-10">
-                        <div class="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin shadow-lg shadow-blue-500/20"></div>
-                        <div>
-                            <p id="loader-text" class="text-sm font-black italic">GPU 運算中...</p>
-                            <p class="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-widest">目前正在平行處理影像卷積與文字偵測</p>
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        <span id="loader-percent" class="text-4xl font-black text-blue-500">0%</span>
-                    </div>
-                </div>
-
-                <!-- 匯出控制列 -->
-                <div id="export-bar" class="hidden p-8 bg-slate-50 border-b border-slate-200 animate-in slide-in-from-top duration-500">
-                    <div class="flex flex-col md:flex-row gap-6 items-end">
-                        <div class="flex-1 w-full text-left">
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">匯出專案名稱</label>
-                            <input type="text" id="filename-input" value="Cleaned_VGH_Presentation" class="w-full bg-white border border-slate-200 px-5 py-4 rounded-2xl font-bold focus:ring-4 focus:ring-blue-100 outline-none transition-all">
-                        </div>
-                        <div class="flex gap-4 w-full md:w-auto">
-                            <button id="download-bg-btn" class="flex-1 md:flex-none bg-slate-800 hover:bg-black text-white px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all">
-                                下載背景 ZIP
-                            </button>
-                            <button id="download-pptx-btn" class="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white px-10 py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-blue-200">
-                                匯出 PPTX
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 投影片對照列表 -->
-                <div id="page-list" class="p-10 space-y-12 max-h-[800px] overflow-y-auto scroll-custom bg-[#fbfcfd]">
-                    <!-- 內容動態插入 -->
-                </div>
-            </div>
+      {/* Highlights Section */}
+      <section className="max-w-6xl mx-auto px-6 py-24">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl font-bold text-slate-900">技術亮點總結</h2>
         </div>
 
-        <footer class="mt-12 text-center text-slate-400 font-bold text-[10px] uppercase tracking-[0.4em] opacity-60">
-            Taipei Veterans General Hospital • AI Project • 2024
-        </footer>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+          <div className="group p-8 bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition-all">
+            <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600 mb-6 group-hover:scale-110 transition-transform">
+              <Zap className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold mb-3 text-slate-900">低延遲體驗</h3>
+            <p className="text-slate-500 leading-relaxed">
+              透過瀏覽器端的 AI 運算，減少了上傳大檔案到雲端處理的時間，即時回饋解析結果。
+            </p>
+          </div>
+
+          <div className="group p-8 bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition-all">
+            <div className="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600 mb-6 group-hover:scale-110 transition-transform">
+              <Target className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold mb-3 text-slate-900">精準還原</h3>
+            <p className="text-slate-500 leading-relaxed">
+              透過座標捕捉技術，能將標題與內文精準地放置在 PPTX 的對應位置，極大減少二次調整負擔。
+            </p>
+          </div>
+
+          <div className="group p-8 bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition-all">
+            <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center text-green-600 mb-6 group-hover:scale-110 transition-transform">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold mb-3 text-slate-900">浮水印移除</h3>
+            <p className="text-slate-500 leading-relaxed">
+              利用影像遮罩或特定圖層過濾演算法，自動清除 NotebookLM 生成的標記，恢復簡報原始美感。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-slate-200 py-12 text-center">
+        <div className="flex justify-center space-x-6 mb-4 text-slate-400">
+          <a href="#" className="hover:text-blue-600 transition-colors underline decoration-slate-200 underline-offset-4">技術白皮書</a>
+          <a href="#" className="hover:text-blue-600 transition-colors underline decoration-slate-200 underline-offset-4">API 服務</a>
+          <a href="#" className="hover:text-blue-600 transition-colors underline decoration-slate-200 underline-offset-4">隱私政策</a>
+        </div>
+        <p className="text-slate-400 text-sm">© 2025 DeckEdit 技術分析版. Powered by AI Vision & WebAssembly.</p>
+      </footer>
     </div>
+  );
+};
 
-    <script type="module">
-        // 設定 PDF Worker 路徑
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-        let ocrPipeline = null;
-        let pagesData = []; 
-
-        // --- 高效能 WebGPU 初始化功能 ---
-        async function init() {
-            const chip = document.getElementById('gpu-chip');
-            const dot = document.getElementById('gpu-dot');
-            const text = document.getElementById('gpu-text');
-            
-            let hasGPU = false;
-            let adapter = null;
-
-            if (navigator.gpu) {
-                try {
-                    // 關鍵：要求高效能電源偏好 (High Performance)
-                    adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-                    if (adapter) hasGPU = true;
-                } catch (e) {
-                    console.warn("無法取得 WebGPU 介面:", e);
-                }
-            }
-
-            if(chip) chip.classList.remove('hidden');
-            if (hasGPU && dot && text) {
-                dot.classList.replace('bg-slate-400', 'bg-green-500');
-                text.innerText = `GPU 加速模式 (${adapter.architecture || 'ACTIVE'})`;
-            } else if (text) {
-                text.innerText = 'CPU 模式 (硬體加速不可用)';
-            }
-
-            const { pipeline, env } = window.transformers;
-            env.useBrowserCache = true;
-
-            try {
-                // 優化：指定模型參數以發揮 GPU 效能
-                // 使用 quantized: true (通常載入 q8 或 fp16)，大幅減少 GPU 記憶體頻寬壓力
-                ocrPipeline = await pipeline('document-question-answering', 'Xenova/donut-base-finetuned-docvqa', {
-                    quantized: true, 
-                    progress_callback: (p) => {
-                        if (p.status === 'progress') {
-                            const progEl = document.getElementById('model-progress');
-                            const percEl = document.getElementById('model-percent');
-                            const infoEl = document.getElementById('model-file-info');
-                            if(progEl) progEl.style.width = `${p.progress}%`;
-                            if(percEl) percEl.innerText = `${Math.round(p.progress)}%`;
-                        }
-                    },
-                    device: hasGPU ? 'webgpu' : 'cpu',
-                    dtype: hasGPU ? 'fp16' : 'fp32' // GPU 使用 fp16 推論效率極高
-                });
-                
-                const infoEl = document.getElementById('model-info');
-                if(infoEl) infoEl.innerText = '高效能 AI 模型已就緒，計算任務將優先分配給 GPU。';
-            } catch (e) {
-                const infoEl = document.getElementById('model-info');
-                if(infoEl) infoEl.innerText = '載入失敗。';
-            }
-            
-            setupEventListeners();
-        }
-
-        // --- 核心影像處理：智慧去字 (已針對處理大數據量優化) ---
-        async function smartInpaint(imgSrc) {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    ctx.drawImage(img, 0, 0);
-
-                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const data = imageData.data;
-                    const len = data.length;
-                    const width = canvas.width;
-                    const height = canvas.height;
-                    
-                    const mask = new Uint8Array(width * height);
-
-                    // 1. 偵測文字高對比區域 (優化迴圈效能)
-                    for (let y = 1; y < height - 1; y++) {
-                        const yWidth = y * width;
-                        for (let x = 1; x < width - 1; x++) {
-                            const i = (yWidth + x) << 2;
-                            const bri = (data[i] + data[i+1] + data[i+2]) / 3;
-                            
-                            // 簡易對比度檢測
-                            const rightBri = (data[i+4] + data[i+5] + data[i+6]) / 3;
-                            if (Math.abs(rightBri - bri) > 45) {
-                                mask[yWidth + x] = 1;
-                            }
-                        }
-                    }
-
-                    // 2. 區域像素補全
-                    const output = ctx.createImageData(width, height);
-                    const out = output.data;
-                    out.set(data);
-
-                    const pSize = 6;
-                    for (let y = 0; y < height; y++) {
-                        const yWidth = y * width;
-                        for (let x = 0; x < width; x++) {
-                            const idx = yWidth + x;
-                            if (mask[idx]) {
-                                let r=0, g=0, b=0, count=0;
-                                for (let dy=-pSize; dy<=pSize; dy++) {
-                                    const ny=y+dy;
-                                    if (ny < 0 || ny >= height) continue;
-                                    const nyWidth = ny * width;
-                                    for (let dx=-pSize; dx<=pSize; dx++) {
-                                        const nx=x+dx;
-                                        if (nx>=0 && nx < width) {
-                                            const nidx = nyWidth + nx;
-                                            if (!mask[nidx]) {
-                                                const p = nidx << 2;
-                                                r+=data[p]; g+=data[p+1]; b+=data[p+2]; count++;
-                                            }
-                                        }
-                                    }
-                                }
-                                if (count > 0) {
-                                    const p = idx << 2;
-                                    out[p]=r/count; out[p+1]=g/count; out[p+2]=b/count;
-                                }
-                            }
-                        }
-                    }
-                    ctx.putImageData(output, 0, 0);
-                    resolve(canvas.toDataURL('image/jpeg', 0.8));
-                };
-                img.src = imgSrc;
-            });
-        }
-
-        // --- 處理上傳 ---
-        async function handleFiles(file) {
-            if (!file) return;
-            const dropContainer = document.getElementById('drop-zone-container');
-            const editorView = document.getElementById('editor-view');
-            const list = document.getElementById('page-list');
-            const procBtn = document.getElementById('process-btn');
-            
-            if(dropContainer) dropContainer.classList.add('hidden');
-            if(editorView) editorView.classList.remove('hidden');
-            if(list) list.innerHTML = '';
-            pagesData = [];
-
-            if (file.type === 'application/pdf') {
-                const buf = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument(buf).promise;
-                for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
-                    const page = await pdf.getPage(i);
-                    const vp = page.getViewport({ scale: 1.5 });
-                    const canvas = document.createElement('canvas');
-                    canvas.width = vp.width; canvas.height = vp.height;
-                    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-                    const src = canvas.toDataURL('image/png');
-                    pagesData.push({ original: src, cleaned: null, text: null });
-                    renderItem(src, i - 1);
-                }
-            } else {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    pagesData.push({ original: e.target.result, cleaned: null, text: null });
-                    renderItem(e.target.result, 0);
-                };
-                reader.readAsDataURL(file);
-            }
-            if(procBtn) procBtn.disabled = false;
-        }
-
-        function renderItem(src, idx) {
-            const div = document.createElement('div');
-            div.className = 'grid grid-cols-1 lg:grid-cols-2 gap-10 border-b border-slate-100 pb-10';
-            div.innerHTML = `
-                <div class="space-y-4">
-                    <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Original ${idx+1}</h4>
-                    <div class="canvas-container bg-white border border-slate-200">
-                        <img src="${src}" class="w-full">
-                    </div>
-                </div>
-                <div class="space-y-4">
-                    <h4 class="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em]">GPU Cleaned Layer</h4>
-                    <div id="clean-${idx}" class="canvas-container bg-slate-50 border-2 border-dashed border-slate-200 aspect-video flex items-center justify-center">
-                        <span class="text-[10px] font-bold text-slate-300 italic">等待 GPU 排程任務...</span>
-                    </div>
-                </div>
-            `;
-            const list = document.getElementById('page-list');
-            if(list) list.appendChild(div);
-        }
-
-        // --- 啟動處理程序 ---
-        async function runAI() {
-            const btn = document.getElementById('process-btn');
-            const loader = document.getElementById('global-loader');
-            const lPerc = document.getElementById('loader-percent');
-            const exBar = document.getElementById('export-bar');
-            
-            if(btn) btn.disabled = true;
-            if(loader) loader.classList.remove('hidden');
-
-            for (let i = 0; i < pagesData.length; i++) {
-                const preview = document.getElementById(`clean-${i}`);
-                if(preview) {
-                    preview.innerHTML = `<div class="scanning-line"></div><p class="text-[10px] font-black text-blue-500 z-20 uppercase">GPU ANALYZING...</p>`;
-                    preview.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-
-                const percent = Math.round((i / pagesData.length) * 100);
-                if(lPerc) lPerc.innerText = `${percent}%`;
-
-                // 1. WebGPU OCR 辨識
-                const result = await ocrPipeline(pagesData[i].original, "Extract text.");
-                pagesData[i].text = result[0]?.answer || "";
-
-                // 2. 影像補全 (目前 CPU 執行，但在高效能模式下減少背景阻斷)
-                const cleaned = await smartInpaint(pagesData[i].original);
-                pagesData[i].cleaned = cleaned;
-
-                if(preview) preview.innerHTML = `<img src="${cleaned}" class="w-full h-full object-contain animate-in fade-in duration-500">`;
-            }
-
-            if(lPerc) lPerc.innerText = '100%';
-            if(exBar) {
-                exBar.classList.remove('hidden');
-                exBar.scrollIntoView({ behavior: 'smooth' });
-            }
-        }
-
-        async function saveZIP() {
-            const zip = new JSZip();
-            const folder = zip.folder("Cleaned_Images");
-            const nameEl = document.getElementById('filename-input');
-            const name = nameEl ? nameEl.value : "Cleaned";
-            pagesData.forEach((p, i) => {
-                if(p.cleaned) folder.file(`${name}_${i+1}.jpg`, p.cleaned.split(',')[1], {base64: true});
-            });
-            const content = await zip.generateAsync({type: "blob"});
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(content);
-            link.download = `${name}_Backgrounds.zip`;
-            link.click();
-        }
-
-        function savePPTX() {
-            const pptx = new PptxGenJS();
-            const nameEl = document.getElementById('filename-input');
-            const name = nameEl ? nameEl.value : "Cleaned";
-            pptx.layout = 'LAYOUT_WIDE';
-            pagesData.forEach((p, i) => {
-                const slide = pptx.addSlide();
-                if(p.cleaned) slide.addImage({ data: p.cleaned, x: 0, y: 0, w: '100%', h: '100%' });
-                slide.addText(p.text || "", { x: 0.5, y: 0.5, w: '90%', h: '85%', fontSize: 18, color: '333333' });
-            });
-            pptx.writeFile({ fileName: `${name}.pptx` });
-        }
-
-        function setupEventListeners() {
-            const dz = document.getElementById('drop-zone');
-            const fi = document.getElementById('file-input');
-            const procBtn = document.getElementById('process-btn');
-            const dlBgBtn = document.getElementById('download-bg-btn');
-            const dlPpBtn = document.getElementById('download-pptx-btn');
-
-            if (dz && fi) {
-                dz.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    fi.click();
-                });
-                fi.addEventListener('change', (e) => {
-                    if (e.target.files.length > 0) handleFiles(e.target.files[0]);
-                });
-                dz.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                    dz.classList.add('bg-blue-50', 'border-blue-400');
-                });
-                dz.addEventListener('dragleave', () => {
-                    dz.classList.remove('bg-blue-50', 'border-blue-400');
-                });
-                dz.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    dz.classList.remove('bg-blue-50', 'border-blue-400');
-                    if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files[0]);
-                });
-            }
-
-            if(procBtn) procBtn.onclick = runAI;
-            if(dlBgBtn) dlBgBtn.onclick = saveZIP;
-            if(dlPpBtn) dlPpBtn.onclick = savePPTX;
-        }
-
-        window.addEventListener('load', init);
-    </script>
-</body>
-</html>
+export default App;
