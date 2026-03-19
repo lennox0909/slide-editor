@@ -18,6 +18,7 @@
             border: 2px dashed #cbd5e1;
             transition: all 0.2s ease-in-out;
             cursor: pointer;
+            position: relative;
         }
         .drop-zone:hover {
             border-color: #3b82f6;
@@ -83,8 +84,9 @@
             </div>
 
             <!-- Step 2: Drop Zone -->
+            <!-- 隱藏的檔案輸入框移至外部，避免事件冒泡衝突 -->
+            <input type="file" id="file-input" class="hidden" accept="image/*,application/pdf">
             <div id="drop-zone" class="drop-zone rounded-xl p-10 text-center mb-6">
-                <input type="file" id="file-input" class="hidden" accept="image/*,application/pdf">
                 <div class="flex flex-col items-center pointer-events-none">
                     <svg class="w-12 h-12 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
@@ -369,17 +371,37 @@
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
 
-        dropZone.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) handleFile(e.target.files[0]);
-        });
-        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('bg-blue-50'); };
-        dropZone.ondragleave = () => dropZone.classList.remove('bg-blue-50');
-        dropZone.ondrop = (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('bg-blue-50');
-            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
-        };
+        // 明確綁定點擊事件到隱藏的輸入框
+        if (dropZone && fileInput) {
+            dropZone.addEventListener('click', (e) => {
+                e.preventDefault();
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
+                    // 清空數值，確保同檔案可重複觸發
+                    e.target.value = '';
+                }
+            });
+
+            // 拖放邏輯優化
+            dropZone.addEventListener('dragover', (e) => { 
+                e.preventDefault(); 
+                dropZone.classList.add('bg-blue-50', 'border-blue-400'); 
+            });
+            dropZone.addEventListener('dragleave', () => { 
+                dropZone.classList.remove('bg-blue-50', 'border-blue-400'); 
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('bg-blue-50', 'border-blue-400');
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+        }
 
         document.getElementById('convert-btn').onclick = convertToPPTX;
         document.getElementById('pptx-btn').onclick = exportToPPTX;
