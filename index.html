@@ -1,284 +1,263 @@
-import React, { useState } from 'react';
-import { 
-  Cpu, 
-  Layers, 
-  Layout, 
-  Search, 
-  FileText, 
-  Download, 
-  Image as ImageIcon, 
-  Zap, 
-  Target, 
-  ShieldCheck,
-  ChevronRight,
-  Monitor,
-  Globe,
-  Github,
-  ExternalLink
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeckEdit 技術架構分析</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
 
-const App = () => {
-  const [activeStep, setActiveStep] = useState(0);
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        // 模擬 Lucide 圖標組件
+        const Icon = ({ name, className }) => {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [name]);
+            return <i data-lucide={name} className={className}></i>;
+        };
 
-  const steps = [
-    {
-      title: "影像預處理",
-      subtitle: "Image Pre-processing",
-      desc: "當使用者上傳 NotebookLM 的 PDF 或截圖時，系統會先將每一頁簡報轉換為高解析度的圖片。這是為了確保後續 OCR（光學字元辨識）的準確度。",
-      icon: <Monitor className="w-6 h-6" />,
-      color: "bg-blue-500",
-      shadowColor: "shadow-blue-500/20"
-    },
-    {
-      title: "視覺與文字偵測",
-      subtitle: "AI Vision & OCR Detection",
-      desc: "這是最關鍵的一步。DeckEdit 使用 AI 模型掃描圖片，辨識出文字內容、字體大小、顏色以及在頁面上的精確座標。",
-      icon: <Search className="w-6 h-6" />,
-      color: "bg-indigo-500",
-      shadowColor: "shadow-indigo-500/20"
-    },
-    {
-      title: "層級與結構解析",
-      subtitle: "Layout Reconstruction",
-      desc: "系統不僅是辨識文字，還會分析文字間的邏輯關係（如標題 H1、清單項目）。它會嘗試將原本鎖死在圖片中的元素「拆解」成獨立物件。",
-      icon: <Layout className="w-6 h-6" />,
-      color: "bg-purple-500",
-      shadowColor: "shadow-purple-500/20"
-    },
-    {
-      title: "背景與文字分離",
-      subtitle: "De-layering",
-      desc: "為了讓簡報看起來自然，DeckEdit 會嘗試過濾掉 NotebookLM 原本的浮水印，並將辨識出的文字從原圖中分離，轉化為可修改的文字層。",
-      icon: <Layers className="w-6 h-6" />,
-      color: "bg-pink-500",
-      shadowColor: "shadow-pink-500/20"
-    },
-    {
-      title: "背景圖片導出",
-      subtitle: "Background Export",
-      desc: "使用者可以把上個步驟分離出來的純淨背景，另存成為獨立的圖片檔案，方便進行其他設計用途。",
-      icon: <ImageIcon className="w-6 h-6" />,
-      color: "bg-orange-500",
-      shadowColor: "shadow-orange-500/20"
-    },
-    {
-      title: "簡報封裝與導出",
-      subtitle: "PPTX Packaging",
-      desc: "最後，系統將解析出的文字區塊、位置資訊與背景圖重新封裝成一個標準的 .pptx 檔案，確保其能在 PowerPoint 或 Google Slides 中編輯。",
-      icon: <FileText className="w-6 h-6" />,
-      color: "bg-green-500",
-      shadowColor: "shadow-green-500/20"
-    }
-  ];
+        const App = () => {
+            const [activeStep, setActiveStep] = useState(0);
 
-  const techStacks = [
-    {
-      category: "OCR 模型",
-      items: [
-        { name: "Tesseract.js / WebAssembly", detail: "強調「本地偵測」，在瀏覽器端執行 OCR，節省伺服器成本並保護隱私。" },
-        { name: "Google Cloud / Azure Vision", detail: "用於處理更複雜的版面分析（Layout Analysis）與多國語言混合辨識。" }
-      ],
-      icon: <Cpu className="text-blue-600" />
-    },
-    {
-      category: "前端處理框架",
-      items: [
-        { name: "PptxGenJS", detail: "一款常用的 JavaScript 函式庫，用於在瀏覽器端直接生成 PowerPoint 檔案。" },
-        { name: "PDF.js", detail: "由 Mozilla 開發，用於解析與渲染上傳的 PDF 檔案。" }
-      ],
-      icon: <Layout className="text-purple-600" />
-    },
-    {
-      category: "語言處理技術",
-      items: [
-        { name: "自動偵測與優化", detail: "針對中、英、日文進行特定的編碼與間距優化，修復 OCR 常見的空格與標點問題。" }
-      ],
-      icon: <Globe className="text-green-600" />
-    }
-  ];
+            const steps = [
+                {
+                    title: "影像預處理",
+                    subtitle: "Image Pre-processing",
+                    desc: "當使用者上傳 NotebookLM 的 PDF 或截圖時，系統會先將每一頁簡報轉換為高解析度的圖片。這是為了確保後續 OCR（光學字元辨識）的準確度。",
+                    icon: "monitor",
+                    color: "bg-blue-500",
+                    shadowColor: "shadow-blue-500/20"
+                },
+                {
+                    title: "視覺與文字偵測",
+                    subtitle: "AI Vision & OCR Detection",
+                    desc: "這是最關鍵的一步。DeckEdit 使用 AI 模型掃描圖片，辨識出文字內容、字體大小、顏色以及在頁面上的精確座標。",
+                    icon: "search",
+                    color: "bg-indigo-500",
+                    shadowColor: "shadow-indigo-500/20"
+                },
+                {
+                    title: "層級與結構解析",
+                    subtitle: "Layout Reconstruction",
+                    desc: "系統不僅是辨識文字，還會分析文字間的邏輯關係（如標題 H1、清單項目）。它會嘗試將原本鎖死在圖片中的元素「拆解」成獨立物件。",
+                    icon: "layout",
+                    color: "bg-purple-500",
+                    shadowColor: "shadow-purple-500/20"
+                },
+                {
+                    title: "背景與文字分離",
+                    subtitle: "De-layering",
+                    desc: "為了讓簡報看起來自然，DeckEdit 會嘗試過濾掉 NotebookLM 原本的浮水印，並將辨識出的文字從原圖中分離，轉化為可修改的文字層。",
+                    icon: "layers",
+                    color: "bg-pink-500",
+                    shadowColor: "shadow-pink-500/20"
+                },
+                {
+                    title: "背景圖片導出",
+                    subtitle: "Background Export",
+                    desc: "使用者可以把上個步驟分離出來的純淨背景，另存成為獨立的圖片檔案，方便進行其他設計用途。",
+                    icon: "image",
+                    color: "bg-orange-500",
+                    shadowColor: "shadow-orange-500/20"
+                },
+                {
+                    title: "簡報封裝與導出",
+                    subtitle: "PPTX Packaging",
+                    desc: "最後，系統將解析出的文字區塊、位置資訊與背景圖重新封裝成一個標準的 .pptx 檔案，確保其能在 PowerPoint 或 Google Slides 中編輯。",
+                    icon: "file-text",
+                    color: "bg-green-500",
+                    shadowColor: "shadow-green-500/20"
+                }
+            ];
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100">
-      {/* Hero Section */}
-      <header className="relative bg-white border-b border-slate-200 overflow-hidden">
-        <div className="absolute inset-0 opacity-5 pointer-events-none">
-          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(#4f46e5_1px,transparent_1px)] [background-size:20px_20px]"></div>
-        </div>
-        <div className="max-w-6xl mx-auto px-6 py-24 text-center relative z-10">
-          <div className="inline-flex items-center space-x-2 bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium mb-6">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-            </span>
-            <span>已託管於 GitHub Pages</span>
-          </div>
-          <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-slate-900 mb-6 leading-tight">
-            讓 NotebookLM 生成的簡報<br/>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">重獲編輯自由</span>
-          </h1>
-          <p className="max-w-2xl mx-auto text-lg text-slate-600 leading-relaxed mb-10">
-            深入探討 DeckEdit 如何運用電腦視覺與 OCR 技術，將靜態圖片轉化為結構化的可編輯 PPTX 檔案。
-          </p>
-          
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a 
-              href="https://github.com" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex items-center px-8 py-3 bg-slate-900 text-white rounded-full font-bold hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl"
-            >
-              <Github className="w-5 h-5 mr-2" />
-              查看 GitHub 原始碼
-            </a>
-            <a 
-              href="#" 
-              className="flex items-center px-8 py-3 bg-white text-slate-700 border border-slate-200 rounded-full font-bold hover:bg-slate-50 transition-all shadow-sm"
-            >
-              <ExternalLink className="w-5 h-5 mr-2" />
-              訪問靜態網頁
-            </a>
-          </div>
-        </div>
-      </header>
+            const techStacks = [
+                {
+                    category: "OCR 模型",
+                    items: [
+                        { name: "Tesseract.js / WebAssembly", detail: "強調「本地偵測」，在瀏覽器端執行 OCR，節省伺服器成本並保護隱私。" },
+                        { name: "Google Cloud / Azure Vision", detail: "用於處理更複雜的版面分析（Layout Analysis）與多國語言混合辨識。" }
+                    ],
+                    icon: "cpu"
+                },
+                {
+                    category: "前端處理框架",
+                    items: [
+                        { name: "PptxGenJS", detail: "一款常用的 JavaScript 函式庫，用於在瀏覽器端直接生成 PowerPoint 檔案。" },
+                        { name: "PDF.js", detail: "由 Mozilla 開發，用於解析與渲染上傳的 PDF 檔案。" }
+                    ],
+                    icon: "code"
+                },
+                {
+                    category: "語言處理技術",
+                    items: [
+                        { name: "自動偵測與優化", detail: "針對中、英、日文進行特定的編碼與間距優化，修復 OCR 常見的空格與標點問題。" }
+                    ],
+                    icon: "globe"
+                }
+            ];
 
-      {/* Core Process Section */}
-      <section className="max-w-6xl mx-auto px-6 py-20">
-        <div className="mb-12">
-          <h2 className="text-3xl font-bold text-slate-900 flex items-center">
-            <Zap className="w-8 h-8 mr-2 text-yellow-500 fill-yellow-500" />
-            核心處理步驟
-          </h2>
-          <p className="text-slate-500 mt-2">從上傳到導出的六大 AI 轉化階段</p>
-        </div>
+            return (
+                <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-blue-100">
+                    {/* Hero Section */}
+                    <header className="relative bg-white border-b border-slate-200 overflow-hidden">
+                        <div className="absolute inset-0 opacity-5 pointer-events-none">
+                            <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(#4f46e5_1px,transparent_1px)] [background-size:20px_20px]"></div>
+                        </div>
+                        <div className="max-w-6xl mx-auto px-6 py-24 text-center relative z-10">
+                            <div className="inline-flex items-center space-x-2 bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium mb-6">
+                                <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                                </span>
+                                <span>已託管於 GitHub Pages</span>
+                            </div>
+                            <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-slate-900 mb-6 leading-tight">
+                                讓 NotebookLM 生成的簡報<br/>
+                                <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">重獲編輯自由</span>
+                            </h1>
+                            <p className="max-w-2xl mx-auto text-lg text-slate-600 leading-relaxed mb-10">
+                                深入探討 DeckEdit 如何運用電腦視覺與 OCR 技術，將靜態圖片轉化為結構化的可編輯 PPTX 檔案。
+                            </p>
+                            
+                            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                                <a href="https://github.com" target="_blank" className="flex items-center px-8 py-3 bg-slate-900 text-white rounded-full font-bold hover:bg-slate-800 transition-all shadow-lg">
+                                    <Icon name="github" className="w-5 h-5 mr-2" />
+                                    查看 GitHub 原始碼
+                                </a>
+                                <a href="#" className="flex items-center px-8 py-3 bg-white text-slate-700 border border-slate-200 rounded-full font-bold hover:bg-slate-50 transition-all shadow-sm">
+                                    <Icon name="external-link" className="w-5 h-5 mr-2" />
+                                    訪問靜態網頁
+                                </a>
+                            </div>
+                        </div>
+                    </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1 space-y-3">
-            {steps.map((step, idx) => (
-              <button
-                key={idx}
-                onClick={() => setActiveStep(idx)}
-                className={`w-full text-left p-4 rounded-2xl transition-all duration-200 border ${
-                  activeStep === idx 
-                  ? 'bg-white border-blue-200 shadow-lg shadow-blue-500/5 translate-x-2' 
-                  : 'bg-transparent border-transparent hover:bg-slate-100 text-slate-500'
-                }`}
-              >
-                <div className="flex items-center space-x-4">
-                  <div className={`p-2.5 rounded-xl text-white transition-colors ${activeStep === idx ? step.color : 'bg-slate-300'}`}>
-                    {step.icon}
-                  </div>
-                  <div>
-                    <h3 className={`font-bold leading-tight ${activeStep === idx ? 'text-slate-900' : ''}`}>{step.title}</h3>
-                    <p className="text-[10px] opacity-70 uppercase tracking-widest mt-0.5">{step.subtitle}</p>
-                  </div>
+                    {/* Core Process Section */}
+                    <section className="max-w-6xl mx-auto px-6 py-20">
+                        <div className="mb-12">
+                            <h2 className="text-3xl font-bold text-slate-900 flex items-center">
+                                <Icon name="zap" className="w-8 h-8 mr-2 text-yellow-500 fill-yellow-500" />
+                                核心處理步驟
+                            </h2>
+                            <p className="text-slate-500 mt-2">從上傳到導出的六大 AI 轉化階段</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="lg:col-span-1 space-y-3">
+                                {steps.map((step, idx) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => setActiveStep(idx)}
+                                        className={`w-full text-left p-4 rounded-2xl transition-all duration-200 border ${
+                                            activeStep === idx 
+                                            ? 'bg-white border-blue-200 shadow-lg shadow-blue-500/5 translate-x-2' 
+                                            : 'bg-transparent border-transparent hover:bg-slate-100 text-slate-500'
+                                        }`}
+                                    >
+                                        <div className="flex items-center space-x-4">
+                                            <div className={`p-2.5 rounded-xl text-white transition-colors ${activeStep === idx ? step.color : 'bg-slate-300'}`}>
+                                                <Icon name={step.icon} className="w-6 h-6" />
+                                            </div>
+                                            <div>
+                                                <h3 className={`font-bold leading-tight ${activeStep === idx ? 'text-slate-900' : ''}`}>{step.title}</h3>
+                                                <p className="text-[10px] opacity-70 uppercase tracking-widest mt-0.5">{step.subtitle}</p>
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                            
+                            <div className="lg:col-span-2 bg-white rounded-[2rem] p-8 md:p-12 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col justify-center min-h-[450px]">
+                                <div className="flex items-center space-x-5 mb-8">
+                                    <div className={`p-5 rounded-2xl text-white ${steps[activeStep].color} shadow-lg ${steps[activeStep].shadowColor}`}>
+                                        <Icon name={steps[activeStep].icon} className="w-8 h-8" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-3xl font-bold text-slate-900">{steps[activeStep].title}</h3>
+                                        <p className="text-blue-600 font-semibold text-lg">{steps[activeStep].subtitle}</p>
+                                    </div>
+                                </div>
+                                <p className="text-xl text-slate-600 leading-relaxed mb-10">
+                                    {steps[activeStep].desc}
+                                </p>
+                                <div className="mt-auto pt-8 border-t border-slate-100 flex justify-between items-center text-sm font-medium text-slate-400">
+                                    <span className="bg-slate-50 px-3 py-1 rounded-full">階段 {activeStep + 1} / {steps.length}</span>
+                                    <div className="flex space-x-1.5">
+                                        {steps.map((_, i) => (
+                                            <button 
+                                                key={i} 
+                                                onClick={() => setActiveStep(i)}
+                                                className={`h-2 rounded-full transition-all duration-300 ${activeStep === i ? 'w-10 bg-blue-600' : 'w-2 bg-slate-200 hover:bg-slate-300'}`} 
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* Tech Stack Section */}
+                    <section className="bg-slate-900 text-white py-24">
+                        <div className="max-w-6xl mx-auto px-6">
+                            <div className="text-center mb-16">
+                                <h2 className="text-4xl font-bold mb-4">可能使用的模型與技術棧</h2>
+                                <p className="text-slate-400 text-lg">基於「本地處理」與「跨語言」特性的架構推測</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                {techStacks.map((stack, idx) => (
+                                    <div key={idx} className="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 p-8 rounded-[2rem] hover:bg-slate-800/60 transition-all group">
+                                        <div className="bg-slate-700/50 p-4 rounded-2xl w-fit mb-8 group-hover:scale-110 transition-transform">
+                                            <Icon name={stack.icon} className="w-6 h-6 text-blue-400" />
+                                        </div>
+                                        <h3 className="text-2xl font-bold mb-8 border-b border-slate-700 pb-4">{stack.category}</h3>
+                                        <ul className="space-y-8">
+                                            {stack.items.map((item, i) => (
+                                                <li key={i}>
+                                                    <h4 className="font-bold text-blue-400 text-lg mb-2">{item.name}</h4>
+                                                    <p className="text-slate-400 leading-relaxed">{item.detail}</p>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* Footer */}
+                    <footer className="bg-white border-t border-slate-200 py-16 text-center">
+                        <div className="max-w-6xl mx-auto px-6">
+                            <div className="flex justify-center mb-8">
+                                <Icon name="github" className="w-8 h-8 text-slate-400" />
+                            </div>
+                            <p className="text-slate-400 text-sm">© 2025 DeckEdit 技術分析版. Hosted on GitHub Pages.</p>
+                        </div>
+                    </footer>
                 </div>
-              </button>
-            ))}
-          </div>
-          
-          <div className="lg:col-span-2 bg-white rounded-[2rem] p-8 md:p-12 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col justify-center min-h-[450px] transition-all duration-500">
-             <div className="flex items-center space-x-5 mb-8">
-                <div className={`p-5 rounded-2xl text-white ${steps[activeStep].color} shadow-lg ${steps[activeStep].shadowColor}`}>
-                  {React.cloneElement(steps[activeStep].icon, { className: "w-8 h-8" })}
-                </div>
-                <div>
-                  <h3 className="text-3xl font-bold text-slate-900">{steps[activeStep].title}</h3>
-                  <p className="text-blue-600 font-semibold text-lg">{steps[activeStep].subtitle}</p>
-                </div>
-             </div>
-             <p className="text-xl text-slate-600 leading-relaxed mb-10">
-               {steps[activeStep].desc}
-             </p>
-             <div className="mt-auto pt-8 border-t border-slate-100 flex justify-between items-center text-sm font-medium text-slate-400">
-               <span className="bg-slate-50 px-3 py-1 rounded-full">階段 {activeStep + 1} / {steps.length}</span>
-               <div className="flex space-x-1.5">
-                 {steps.map((_, i) => (
-                   <button 
-                     key={i} 
-                     onClick={() => setActiveStep(i)}
-                     className={`h-2 rounded-full transition-all duration-300 ${activeStep === i ? 'w-10 bg-blue-600' : 'w-2 bg-slate-200 hover:bg-slate-300'}`} 
-                   />
-                 ))}
-               </div>
-             </div>
-          </div>
-        </div>
-      </section>
+            );
+        };
 
-      {/* Tech Stack Section */}
-      <section className="bg-slate-900 text-white py-24">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4">可能使用的模型與技術棧</h2>
-            <p className="text-slate-400 text-lg">基於「本地處理」與「跨語言」特性的架構推測</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {techStacks.map((stack, idx) => (
-              <div key={idx} className="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 p-8 rounded-[2rem] hover:bg-slate-800/60 transition-all group">
-                <div className="bg-slate-700/50 p-4 rounded-2xl w-fit mb-8 group-hover:scale-110 transition-transform">
-                  {React.cloneElement(stack.icon, { className: "w-6 h-6" })}
-                </div>
-                <h3 className="text-2xl font-bold mb-8 border-b border-slate-700 pb-4">{stack.category}</h3>
-                <ul className="space-y-8">
-                  {stack.items.map((item, i) => (
-                    <li key={i}>
-                      <h4 className="font-bold text-blue-400 text-lg mb-2">{item.name}</h4>
-                      <p className="text-slate-400 leading-relaxed">{item.detail}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Highlights Section */}
-      <section className="max-w-6xl mx-auto px-6 py-24">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl font-bold text-slate-900">技術亮點總結</h2>
-          <div className="h-1 w-20 bg-blue-600 mx-auto mt-4 rounded-full"></div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-          {[
-            { title: "低延遲體驗", desc: "透過瀏覽器端的 AI 運算，減少了上傳大檔案到雲端處理的時間，即時回饋解析結果。", icon: <Zap />, color: "text-blue-600", bg: "bg-blue-100" },
-            { title: "精準還原", desc: "透過座標捕捉技術，能將標題與內文精準地放置在 PPTX 的對應位置，極大減少調整負擔。", icon: <Target />, color: "text-indigo-600", bg: "bg-indigo-100" },
-            { title: "浮水印移除", desc: "利用影像遮罩或特定圖層過濾演算法，自動清除 NotebookLM 生成的標記，恢復原始美感。", icon: <ShieldCheck />, color: "text-green-600", bg: "bg-green-100" }
-          ].map((item, i) => (
-            <div key={i} className="group p-8 bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
-              <div className={`w-14 h-14 ${item.bg} ${item.color} rounded-2xl flex items-center justify-center mb-6 group-hover:rotate-6 transition-transform`}>
-                {React.cloneElement(item.icon, { className: "w-7 h-7" })}
-              </div>
-              <h3 className="text-2xl font-bold mb-4 text-slate-900">{item.title}</h3>
-              <p className="text-slate-500 leading-relaxed text-lg">
-                {item.desc}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-16 text-center">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="flex justify-center mb-8">
-             <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-slate-900 transition-colors">
-               <Github className="w-8 h-8" />
-             </a>
-          </div>
-          <div className="flex flex-wrap justify-center gap-x-10 gap-y-4 mb-8 text-slate-500 font-medium">
-            <a href="#" className="hover:text-blue-600 transition-colors">技術白皮書</a>
-            <a href="#" className="hover:text-blue-600 transition-colors">API 服務中心</a>
-            <a href="#" className="hover:text-blue-600 transition-colors">隱私權保護</a>
-            <a href="#" className="hover:text-blue-600 transition-colors">聯絡我們</a>
-          </div>
-          <p className="text-slate-400 text-sm">© 2025 DeckEdit 技術分析版. Hosted on GitHub Pages.</p>
-        </div>
-      </footer>
-    </div>
-  );
-};
-
-export default App;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
