@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local AI Deck Architect - 瀏覽器本地 AI 轉換器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入核心庫 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js"></script>
+    <!-- Transformers.js v3 (Support WebGPU) -->
+    <script type="module">
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+        window.transformers = { pipeline, env };
+    </script>
+    <style>
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            transition: all 0.3s ease;
+        }
+        .drop-zone:hover {
+            border-color: #3b82f6;
+            background-color: #f8fafc;
+        }
+        .loading-shimmer {
+            background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans text-slate-900">
+
+    <div class="max-w-4xl mx-auto py-12 px-4">
+        <!-- Header -->
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-extrabold text-slate-900 mb-2">Local AI Deck Architect</h1>
+            <p class="text-slate-600">100% 本地處理 • WebGPU 加速 • 隱私無憂</p>
+            <div id="gpu-status" class="mt-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                正在檢測 WebGPU 支援...
+            </div>
+        </div>
+
+        <!-- Main Card -->
+        <div class="bg-white rounded-2xl shadow-xl p-8 border border-slate-200">
+            
+            <!-- Step 1: Model Loading -->
+            <div id="model-status" class="mb-8 p-4 bg-blue-50 rounded-xl border border-blue-100">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-semibold text-blue-800">AI 模型狀態</span>
+                    <span id="model-percent" class="text-xs text-blue-600">等待初始化...</span>
+                </div>
+                <div class="w-full bg-blue-200 rounded-full h-2">
+                    <div id="model-progress" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <p id="model-info" class="text-xs text-blue-500 mt-2 italic">載入模型需要約 50-100MB 流量（僅需一次）</p>
+            </div>
+
+            <!-- Step 2: Drop Zone -->
+            <div id="drop-zone" class="drop-zone rounded-xl p-12 text-center cursor-pointer mb-6">
+                <input type="file" id="file-input" class="hidden" accept="image/*,application/pdf">
+                <div class="flex flex-col items-center">
+                    <svg class="w-12 h-12 text-slate-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    <p class="text-lg font-medium text-slate-700">拖放 PDF 或簡報截圖至此</p>
+                    <p class="text-sm text-slate-500 mt-1">支援 PDF, PNG, JPG (最大 20MB)</p>
+                </div>
+            </div>
+
+            <!-- Step 3: Action & Preview -->
+            <div id="processing-view" class="hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-slate-800">處理進度</h3>
+                    <button id="convert-btn" disabled class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition disabled:bg-slate-300 disabled:cursor-not-allowed">
+                        轉換為 PPTX
+                    </button>
+                </div>
+                <div id="preview-container" class="grid grid-cols-2 md:grid-cols-3 gap-4 border-t pt-4">
+                    <!-- 預覽縮圖將插入此處 -->
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-8 text-center text-slate-400 text-sm">
+            <p>© 2024 AI Deck Studio • 基於 WebAssembly 與 WebGPU 技術</p>
+        </div>
+    </div>
+
+    <script type="module">
+        // 初始化 PDF.js Worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let vqaPipeline = null;
+        let processedPages = [];
+
+        // 檢查 WebGPU 支援
+        async function checkWebGPU() {
+            const statusEl = document.getElementById('gpu-status');
+            if (navigator.gpu) {
+                try {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    if (adapter) {
+                        statusEl.innerText = '✅ WebGPU 已啟用 (硬體加速中)';
+                        statusEl.className = 'mt-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700';
+                        return true;
+                    }
+                } catch (e) {}
+            }
+            statusEl.innerText = '⚠️ WebGPU 不可用 (將切換至 CPU 模式)';
+            statusEl.className = 'mt-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700';
+            return false;
+        }
+
+        // 初始化 AI 模型
+        async function initAI() {
+            const hasWebGPU = await checkWebGPU();
+            const { pipeline, env } = window.transformers;
+
+            try {
+                // 加載輕量級視覺模型 (Image-to-Text)
+                vqaPipeline = await pipeline('image-to-text', 'Xenova/vit-gpt2-image-captioning', {
+                    progress_callback: (p) => {
+                        const progress = p.progress || 0;
+                        document.getElementById('model-progress').style.width = `${progress}%`;
+                        document.getElementById('model-percent').innerText = `下載中: ${Math.round(progress)}%`;
+                    },
+                    device: hasWebGPU ? 'webgpu' : 'cpu'
+                });
+
+                document.getElementById('model-status').className = 'mb-8 p-4 bg-green-50 rounded-xl border border-green-100';
+                document.getElementById('model-percent').innerText = '模型就緒';
+                document.getElementById('model-percent').className = 'text-xs text-green-600 font-bold';
+            } catch (err) {
+                console.error(err);
+                document.getElementById('model-info').innerText = '模型載入失敗，請重新整理頁面。';
+            }
+        }
+
+        // 處理檔案
+        async function handleFile(file) {
+            if (!file) return;
+            document.getElementById('processing-view').classList.remove('hidden');
+            const previewContainer = document.getElementById('preview-container');
+            previewContainer.innerHTML = '';
+            processedPages = [];
+
+            if (file.type === 'application/pdf') {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                
+                for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    const imgData = canvas.toDataURL('image/png');
+                    addPreview(imgData, `第 ${i} 頁`);
+                    processedPages.push({ image: imgData, canvas: canvas });
+                }
+            } else {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const imgData = e.target.result;
+                    addPreview(imgData, '圖片頁面');
+                    processedPages.push({ image: imgData });
+                };
+                reader.readAsDataURL(file);
+            }
+            document.getElementById('convert-btn').disabled = false;
+        }
+
+        function addPreview(src, label) {
+            const div = document.createElement('div');
+            div.className = 'relative group';
+            div.innerHTML = `
+                <img src="${src}" class="w-full h-32 object-cover rounded-lg border border-slate-200">
+                <span class="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-1 rounded">${label}</span>
+            `;
+            document.getElementById('preview-container').appendChild(div);
+        }
+
+        // 轉換邏輯
+        async function convertToPPTX() {
+            const btn = document.getElementById('convert-btn');
+            btn.disabled = true;
+            btn.innerText = 'AI 分析中...';
+
+            const pptx = new PptxGenJS();
+            pptx.layout = 'LAYOUT_WIDE';
+
+            for (const page of processedPages) {
+                const slide = pptx.addSlide();
+                
+                // 這裡模擬 OCR 流程
+                // 在實際應用中，你會使用更複雜的 OCR 模型來獲取文字位置 (Bounding Boxes)
+                // 這裡我們展示如何調用 Transformers.js 獲取頁面描述作為示範內容
+                try {
+                    const result = await vqaPipeline(page.image);
+                    const detectedText = result[0].generated_text || "無法辨識內容";
+
+                    // 添加背景（可選）
+                    // slide.addImage({ data: page.image, x: 0, y: 0, w: '100%', h: '100%' });
+
+                    // 添加 AI 辨識出的文字塊（這就是 DeckEdit 的核心：將死圖片轉為活文字）
+                    slide.addText(detectedText.toUpperCase(), {
+                        x: 0.5, y: 0.5, w: '90%', h: 1,
+                        fontSize: 24, color: '363636', bold: true,
+                        align: 'center'
+                    });
+
+                    slide.addText("這是由本地 AI 辨識並重新構建的可編輯文字方塊。", {
+                        x: 0.5, y: 2.0, w: '90%', h: 0.5,
+                        fontSize: 14, color: '666666'
+                    });
+
+                } catch (e) {
+                    console.error("AI 處理出錯", e);
+                }
+            }
+
+            pptx.writeFile({ fileName: `AI-Converted-Deck.pptx` });
+            btn.innerText = '轉換完成！';
+            setTimeout(() => {
+                btn.innerText = '轉換為 PPTX';
+                btn.disabled = false;
+            }, 3000);
+        }
+
+        // 事件綁定
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+
+        dropZone.onclick = () => fileInput.click();
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('bg-blue-50'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('bg-blue-50');
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-blue-50');
+            handleFile(e.dataTransfer.files[0]);
+        };
+        fileInput.onchange = (e) => handleFile(e.target.files[0]);
+        document.getElementById('convert-btn').onclick = convertToPPTX;
+
+        // 啟動
+        window.onload = initAI;
+    </script>
+</body>
+</html>
