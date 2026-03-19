@@ -101,13 +101,16 @@
         <div class="bg-white rounded-[40px] shadow-2xl overflow-hidden border border-slate-200">
             
             <div id="drop-zone-container" class="p-10">
+                <!-- 檔案輸入框移至外部確保點擊觸發穩定 -->
+                <input type="file" id="file-input" class="hidden" accept="image/*,application/pdf">
                 <div id="drop-zone" class="drop-zone rounded-[30px] p-24 flex flex-col items-center">
-                    <input type="file" id="file-input" class="hidden" accept="image/*,application/pdf">
-                    <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                    <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mb-6 shadow-inner pointer-events-none">
                         <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                     </div>
-                    <h2 class="text-2xl font-black text-slate-800 mb-2">開始進行背景清潔</h2>
-                    <p class="text-slate-400 font-medium">拖放 PDF、PNG 或 JPG 簡報檔至此處</p>
+                    <div class="pointer-events-none text-center">
+                        <h2 class="text-2xl font-black text-slate-800 mb-2">開始進行背景清潔</h2>
+                        <p class="text-slate-400 font-medium">點擊此處或拖放 PDF、PNG、JPG 至此處</p>
+                    </div>
                 </div>
             </div>
 
@@ -391,11 +394,40 @@
             pptx.writeFile({ fileName: `${name}.pptx` });
         }
 
-        // 事件綁定
+        // 事件監聽與檔案上傳初始化
         const dz = document.getElementById('drop-zone');
         const fi = document.getElementById('file-input');
-        dz.onclick = () => fi.click();
-        fi.onchange = (e) => handleFiles(e.target.files[0]);
+
+        if (dz && fi) {
+            // 點擊事件監聽
+            dz.addEventListener('click', (e) => {
+                fi.click();
+            });
+
+            // 檔案選擇變更監聽
+            fi.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFiles(e.target.files[0]);
+                }
+            });
+
+            // 拖曳上傳支援
+            dz.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dz.classList.add('bg-blue-50');
+            });
+            dz.addEventListener('dragleave', () => {
+                dz.classList.remove('bg-blue-50');
+            });
+            dz.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dz.classList.remove('bg-blue-50');
+                if (e.dataTransfer.files.length > 0) {
+                    handleFiles(e.dataTransfer.files[0]);
+                }
+            });
+        }
+
         document.getElementById('process-btn').onclick = runAI;
         document.getElementById('download-bg-btn').onclick = saveZIP;
         document.getElementById('download-pptx-btn').onclick = savePPTX;
